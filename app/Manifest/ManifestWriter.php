@@ -157,11 +157,13 @@ final class ManifestWriter
             }
         }
 
-        if (is_array($values['artDirs'] ?? null)) {
-            $values['artDirs'] = array_values(array_map(
-                fn ($dir) => is_string($dir) ? $this->relativePath($dir, $baseDir) : $dir,
-                $values['artDirs'],
-            ));
+        foreach (['artDirs', 'whiteDirs'] as $listKey) {
+            if (is_array($values[$listKey] ?? null)) {
+                $values[$listKey] = array_values(array_map(
+                    fn ($dir) => is_string($dir) ? $this->relativePath($dir, $baseDir) : $dir,
+                    $values[$listKey],
+                ));
+            }
         }
 
         return $values;

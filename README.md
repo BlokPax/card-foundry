@@ -60,6 +60,41 @@ Each set can carry a manifest next to its files in Dropbox — a **base** config
 
 Layering: app defaults ← base ← profile ← whatever you set in the UI/CLI for that run. In the app, pick the manifest and a profile — every field prefills but stays editable — and **Save** writes your current settings back to the profile (or a new one, or the base); **Create manifest** bootstraps a foundry.json from the current inputs. Export format (PDF/PNG + ppi) and the white plate toggle are always per-run choices in the interface.
 
+### v0.3.0 manifest keys
+
+Everything below layers the same way (base ← profile ← UI/CLI) and is optional:
+
+```json
+{
+    "base": {
+        "merge": "https://docs.google.com/spreadsheets/d/…/edit#gid=0",
+        "whiteDirs": ["_exports/WHITE"],
+        "treatmentLayers": {
+            "OCM":          { "layer": "OCM Frame", "serialColumn": "OCM with First Edition Stamp" },
+            "Holo Rainbow": "Holo Frame"
+        },
+        "serialize": false,
+        "serialization": { "pad": 2, "column": "Max Count" },
+        "keywords": {
+            "known": ["ON PLAY", "SURGE", "FLYING"],
+            "bare": ["FLYING", "IMMORTAL"],
+            "styleDefault": "Ability Text",
+            "styleWhite": "Ability Text - white",
+            "styleBare": true
+        },
+        "export": { "format": "pdf", "bleed": 3, "cropMarks": true,
+                    "registrationMarks": true, "combine": true, "preset": "Printer_Cards" }
+    }
+}
+```
+
+- **`merge` as a Google Sheet URL** — link the sheet instead of exporting CSVs by hand. Share it as *Anyone with the link → Viewer*; the app downloads the tab named by `gid=` through the CSV export endpoint (cached briefly in the UI, always fresh for a build).
+- **`whiteDirs`** — folders holding per-card white-ink plates, hunted by card ref exactly like `artDirs` (first match wins). The resolved file rides into the build (`whitePlate` stage `art` opt, or the `@white` pipeline placeholder); a missing plate warns but doesn't fail the card.
+- **`treatmentLayers`** — the treatment → template-layer table (the app defaults in `config/wotf.php` remain the fallback). Merged key-by-key, so you can restyle one treatment or add a brand-new one per set. The object form adds `serialColumn`: the merge column carrying that treatment's edition size.
+- **`serialize` / `serialization`** — with `serialize` on, every card exports once *per numbered copy* (`… [OCM] 03of25.pdf`), sized by the treatment's `serialColumn` (or the global `serialization.column`). The padded copy number reaches the pipeline as the `@serial` placeholder → `applyCardData`'s `numerator` opt; cards without a count build once, unnumbered.
+- **`keywords`** — the ability-keyword styling config, per set instead of hardcoded in `wotfLib.jsxinc`. `known` rewrites wotfLib's `KNOWN_KEYWORDS` table before the pipeline runs (drives the "unknown keyword" warnings); the styles + `styleBare` feed the `abilityKeywords` stage, and `known`/`bare` also ride along as `knownKeywords`/`bareKeywords` opts for wotfLib versions that read them (the bare *list* needs that wotfLib support).
+- **`export` options** — `bleed` (`true` = document bleed, a number = mm on all edges), `cropMarks` (cut lines), `registrationMarks`, and `combine` (also merge the run's PDFs into **one document per treatment**, one card per page, alongside the per-card files). A named `preset` wins over the marks options — you'll get a warning in the run log if both are set.
+
 ## Headless CLI
 
 ```sh
@@ -77,6 +112,12 @@ php artisan cards:export … --cards=TBC331 --treatment="Classic Foil"
 
 # several cards; production (keeps the white-ink plate; default builds are NO-WHITE proofs)
 php artisan cards:export … --cards=TBC331,TBC060,TBC197 --production
+
+# linked Google Sheet as the merge (shared "Anyone with the link")
+php artisan cards:export --merge="https://docs.google.com/spreadsheets/d/…/edit#gid=0" --art=… --kit=… --dest=./out --all
+
+# white-layer plates, serialized copies, marks, single combined PDF
+php artisan cards:export … --white=".../_exports/WHITE" --serialize --combine --crop-marks --registration-marks --bleed=3
 
 # lint only / print the pipeline
 php artisan cards:export --merge=… --art=… --kit=… --dest=… --dry-run

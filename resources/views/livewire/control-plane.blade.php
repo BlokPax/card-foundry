@@ -447,6 +447,49 @@
                             @endif
                         </div>
 
+                        {{-- white-ink layer art, hunted by card ref like art --}}
+                        <div class="row-compact !h-auto !items-start py-2.5"
+                             x-data="{ over: false }"
+                             x-on:dragover.prevent="over = true" x-on:dragleave="over = false"
+                             x-on:drop.prevent="over = false; droppedPaths($event).forEach((p) => $wire.setPathFromDrop('whiteDirs', p))"
+                             x-bind:class="over ? 'ring-2 ring-accent ring-inset' : ''">
+                            <span class="field-label pt-1">White layers</span>
+                            <ul class="min-w-0 flex-1 space-y-1">
+                                @foreach ($whiteDirs as $index => $dir)
+                                    @php $dirPortable = $this->portableDisplay($dir); @endphp
+                                    <li class="group/dir flex items-center gap-2">
+                                        <span class="w-3 shrink-0 text-center font-mono text-[10px] text-fg-subtle">{{ $index + 1 }}</span>
+                                        <span class="flex min-w-0 flex-1 items-center gap-1.5">
+                                            <x-path :path="$dir" :display="$dirPortable" class="{{ is_dir($dir) ? '' : '!border-danger-fg/40 !bg-danger-bg' }}" />
+                                            <button wire:click="openInFinder({{ json_encode($dir) }})" class="ghost-icon shrink-0" title="Show in Finder">
+                                                <flux:icon name="folder" variant="micro" />
+                                            </button>
+                                            @if ($manifestPath !== '')
+                                                <span class="inline-block size-2 shrink-0 rounded-full {{ $dirPortable !== null ? 'bg-ok' : 'bg-warn' }}"
+                                                      title="{{ $dirPortable !== null ? 'Portable — stored relative to the set; works on every machine syncing this folder' : 'This machine only — outside the set\'s folder tree' }}"></span>
+                                            @endif
+                                        </span>
+                                        <span class="flex shrink-0 gap-0.5 opacity-0 transition group-hover/dir:opacity-100">
+                                            <button wire:click="moveWhiteDir({{ $index }}, -1)" @disabled($index === 0) class="icon-btn" title="Search earlier"><flux:icon name="chevron-up" variant="micro" /></button>
+                                            <button wire:click="moveWhiteDir({{ $index }}, 1)" @disabled($index === count($whiteDirs) - 1) class="icon-btn" title="Search later"><flux:icon name="chevron-down" variant="micro" /></button>
+                                            <button wire:click="removeWhiteDir({{ $index }})" class="icon-btn hover:!text-danger-fg" title="Remove">✕</button>
+                                        </span>
+                                    </li>
+                                @endforeach
+                                @unless ($native)
+                                    <li class="flex items-center gap-2">
+                                        <span class="w-3"></span>
+                                        <flux:input size="sm" wire:model="newWhiteDir" wire:keydown.enter="addWhiteDir" placeholder="/path/to/white-folder" class="flex-1 font-mono" />
+                                        <flux:button size="xs" variant="subtle" wire:click="addWhiteDir">Add</flux:button>
+                                    </li>
+                                @endunless
+                                <li class="pt-0.5 text-[11px] text-fg-subtle">Optional — per-card white-ink plates, hunted by card ref like artwork.</li>
+                            </ul>
+                            @if ($native)
+                                <flux:button size="xs" variant="subtle" wire:click="pick('whiteDirs')">Add…</flux:button>
+                            @endif
+                        </div>
+
                         {{-- cover image for the set index — per-set, embedded on save --}}
                         <div class="row-compact group !h-auto !items-start py-2.5">
                             <span class="field-label pt-1">Cover image</span>
@@ -770,6 +813,33 @@
                                 <span class="block text-[11px] leading-snug text-fg-subtle">Hides the white ink plate. Turn off for production print.</span>
                             </span>
                         </label>
+
+                        <label class="flex cursor-pointer items-start gap-2.5 rounded-lg bg-surface-2 p-2.5">
+                            <flux:checkbox wire:model.live="serialize" class="mt-0.5" />
+                            <span class="min-w-0">
+                                <span class="block text-xs font-medium text-fg">Serialized copies</span>
+                                <span class="block text-[11px] leading-snug text-fg-subtle">One export per numbered copy — edition sizes come from the merge file.</span>
+                            </span>
+                        </label>
+
+                        @if ($format === 'pdf')
+                            <div>
+                                <span class="field-label mb-1.5 block !w-auto">PDF options</span>
+                                <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg bg-surface-2 p-2.5">
+                                    @foreach ([
+                                        'cropMarks' => ['Cut lines', 'Crop marks at the trim'],
+                                        'registrationMarks' => ['Registration', 'Registration marks'],
+                                        'bleed' => ['Bleed', "The document's bleed area"],
+                                        'combine' => ['Single PDF', 'Also combine every card into one document per treatment'],
+                                    ] as $flag => [$label, $hint])
+                                        <label class="flex cursor-pointer items-center gap-2" title="{{ $hint }}">
+                                            <flux:checkbox wire:model.live="{{ $flag }}" />
+                                            <span class="text-[11.5px] font-medium text-fg">{{ $label }}</span>
+                                        </label>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
 
                         <div class="border-t border-line"></div>
 

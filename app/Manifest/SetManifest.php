@@ -58,10 +58,15 @@ final class SetManifest
             'merge' => '',
             'template' => '',
             'artDirs' => [],
+            'whiteDirs' => [],
             'treatment' => ['Base Paper'],
+            'treatmentLayers' => config('wotf.treatments'),
             'proof' => true,
             'export' => ['format' => 'pdf'],
             'pipeline' => null,
+            'serialize' => false,
+            'serialization' => [],
+            'keywords' => [],
         ];
 
         // UI/CLI overrides may pass a flat "format" for convenience.
@@ -84,6 +89,8 @@ final class SetManifest
         $export = (array) ($merged['export'] ?? []);
         $format = strtolower((string) ($export['format'] ?? 'pdf'));
 
+        $serialization = (array) $merged['serialization'];
+
         return new BuildConfig(
             set: $this->set,
             profile: $profile,
@@ -96,7 +103,53 @@ final class SetManifest
             format: $format,
             exportOptions: array_diff_key($export, ['format' => true]),
             pipeline: $merged['pipeline'] ?? null,
+            whiteDirs: array_values(array_map($this->resolve(...), (array) $merged['whiteDirs'])),
+            treatmentConfig: $this->normalizeTreatmentConfig((array) $merged['treatmentLayers']),
+            serialize: (bool) $merged['serialize'],
+            serialization: [
+                'pad' => max(1, (int) ($serialization['pad'] ?? 2)),
+                'column' => is_string($serialization['column'] ?? null) && trim($serialization['column']) !== ''
+                    ? trim($serialization['column'])
+                    : null,
+            ],
+            keywords: (array) $merged['keywords'],
         );
+    }
+
+    /**
+     * Treatment entries come as "layer name" or {layer, serialColumn}.
+     *
+     * @param  array<string,mixed>  $entries
+     * @return array<string,array{layer:string,serialColumn:?string}>
+     */
+    private function normalizeTreatmentConfig(array $entries): array
+    {
+        $normalized = [];
+
+        foreach ($entries as $treatment => $entry) {
+            if (is_string($entry) && $entry !== '') {
+                $normalized[$treatment] = ['layer' => $entry, 'serialColumn' => null];
+
+                continue;
+            }
+
+            $layer = is_array($entry) ? ($entry['layer'] ?? null) : null;
+
+            if (! is_string($layer) || $layer === '') {
+                throw new ManifestException(
+                    "Manifest {$this->path}: treatmentLayers entry \"{$treatment}\" needs a layer name.",
+                );
+            }
+
+            $serialColumn = $entry['serialColumn'] ?? null;
+
+            $normalized[$treatment] = [
+                'layer' => $layer,
+                'serialColumn' => is_string($serialColumn) && trim($serialColumn) !== '' ? trim($serialColumn) : null,
+            ];
+        }
+
+        return $normalized;
     }
 
     /**
@@ -107,10 +160,13 @@ final class SetManifest
     private function overlay(array $under, array $over): array
     {
         foreach ($over as $key => $value) {
-            // "export" merges key-by-key so a profile can change just the
-            // format while keeping the base ppi/preset; everything else
-            // (scalars, artDirs, pipeline) replaces wholesale.
-            if ($key === 'export' && is_array($value) && is_array($under[$key] ?? null)) {
+            // Maps merge key-by-key so a profile can change just the format
+            // while keeping the base ppi/preset, or override one treatment's
+            // layer; everything else (scalars, artDirs, pipeline) replaces
+            // wholesale.
+            $mergeable = in_array($key, ['export', 'treatmentLayers', 'serialization', 'keywords'], true);
+
+            if ($mergeable && is_array($value) && is_array($under[$key] ?? null)) {
                 $under[$key] = array_replace($under[$key], $value);
             } else {
                 $under[$key] = $value;
@@ -122,7 +178,8 @@ final class SetManifest
 
     private function resolve(string $path): string
     {
-        if ($path === '' || str_starts_with($path, '/')) {
+        // URLs (a linked Google Sheet merge) are not filesystem paths.
+        if ($path === '' || str_starts_with($path, '/') || preg_match('#^[a-z][a-z0-9+.-]*://#i', $path)) {
             return $path;
         }
 

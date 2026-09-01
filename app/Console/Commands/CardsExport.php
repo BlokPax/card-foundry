@@ -19,8 +19,9 @@ class CardsExport extends Command
     protected $signature = 'cards:export
         {--manifest=    : Path to a set\'s foundry.json — provides defaults for everything below}
         {--profile=     : Named profile from the manifest (e.g. print, preview)}
-        {--merge=       : Path to the merge file (.csv or .xlsx)}
+        {--merge=       : Merge file (.csv/.xlsx) or a Google Sheet URL shared "Anyone with the link"}
         {--art=*        : Artwork directory (repeatable; searched in order, first match wins)}
+        {--white=*      : White-layer artwork directory (repeatable; hunted like --art)}
         {--template=    : InDesign template (default: the kit\'s master template)}
         {--dest=        : Output directory for exported cards}
         {--kit=         : The build-kit folder (wotfLib.jsxinc, Links/, builds/)}
@@ -28,6 +29,12 @@ class CardsExport extends Command
         {--all          : Export every card in the merge file}
         {--treatment=*  : Treatment (repeatable — each exports into its own subfolder)}
         {--format=      : Export format: pdf or png}
+        {--serialize    : Build serialized copies — one export per numbered copy (edition sizes from the merge file)}
+        {--no-serialize : Ignore the manifest\'s serialize setting for this run}
+        {--combine      : Also combine the run\'s PDFs into one document per treatment}
+        {--bleed=       : PDF bleed: a size in mm, or "doc" for the document\'s own bleed}
+        {--crop-marks   : Add crop (cut) marks to PDF exports}
+        {--registration-marks : Add registration marks to PDF exports}
         {--production   : Keep the white-ink plate (default builds are NO-WHITE proofs)}
         {--show-plan    : Print the build pipeline (stages, order, options) and exit}
         {--dry-run      : Parse and lint only; do not touch InDesign}
@@ -97,7 +104,12 @@ class CardsExport extends Command
         }
 
         try {
-            $merge = $parser->parse($config->mergePath);
+            // A linked Google Sheet merge downloads to a local CSV first.
+            if (\App\Merge\GoogleSheetFetcher::isUrl($config->mergePath)) {
+                $this->components->info('Downloading the linked Google Sheet…');
+            }
+
+            $merge = $parser->parse((new \App\Merge\GoogleSheetFetcher)->localize($config->mergePath));
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 
@@ -180,8 +192,24 @@ class CardsExport extends Command
             $overrides['artDirs'] = $artDirs;
         }
 
+        $whiteDirs = array_values(array_map(fn ($dir) => rtrim($dir, '/'), (array) $this->option('white')));
+        if ($whiteDirs !== []) {
+            $overrides['whiteDirs'] = $whiteDirs;
+        }
+
         if ($this->option('production')) {
             $overrides['proof'] = false;
+        }
+
+        if ($this->option('no-serialize')) {
+            $overrides['serialize'] = false;
+        } elseif ($this->option('serialize')) {
+            $overrides['serialize'] = true;
+        }
+
+        $exportOverrides = $this->exportOverrides();
+        if ($exportOverrides !== []) {
+            $overrides['export'] = $exportOverrides;
         }
 
         if ($manifestPath = $this->option('manifest')) {
@@ -206,9 +234,36 @@ class CardsExport extends Command
             treatments: $treatments ?: ['Base Paper'],
             proof: ! $this->option('production'),
             format: strtolower($this->option('format') ?: 'pdf'),
-            exportOptions: [],
+            exportOptions: $exportOverrides,
             pipeline: null,
+            whiteDirs: $whiteDirs,
+            serialize: (bool) $this->option('serialize') && ! $this->option('no-serialize'),
         );
+    }
+
+    /**
+     * The export-option flags shared by both config paths.
+     *
+     * @return array<string,mixed>
+     */
+    private function exportOverrides(): array
+    {
+        $export = [];
+
+        if ($this->option('combine')) {
+            $export['combine'] = true;
+        }
+        if ($this->option('crop-marks')) {
+            $export['cropMarks'] = true;
+        }
+        if ($this->option('registration-marks')) {
+            $export['registrationMarks'] = true;
+        }
+        if (($bleed = $this->option('bleed')) !== null && $bleed !== '') {
+            $export['bleed'] = is_numeric($bleed) ? +$bleed : true;
+        }
+
+        return $export;
     }
 
     private function executeRun(Run $run, ExportRunner $runner, BridgeClient $bridge, BridgeSupervisor $supervisor): int

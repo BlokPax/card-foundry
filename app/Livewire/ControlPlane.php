@@ -100,6 +100,12 @@ class ControlPlane extends Component
     /** Browser-mode text field for adding an art directory. */
     public string $newArtDir = '';
 
+    /** @var list<string> white-ink layer art, hunted like artDirs */
+    public array $whiteDirs = [];
+
+    /** Browser-mode text field for adding a white-layer directory. */
+    public string $newWhiteDir = '';
+
     // ── Selection ───────────────────────────────────────────────────────
     public string $mode = 'all'; // all | selected | single
 
@@ -127,6 +133,23 @@ class ControlPlane extends Component
 
     /** Nullable so the field can be erased mid-edit; builds require a value. */
     public ?int $ppi = 300;
+
+    // ── PDF options (v0.3.0) ────────────────────────────────────────────
+    public bool $cropMarks = false;
+
+    public bool $registrationMarks = false;
+
+    /** Document bleed on PDF exports (numeric bleeds live in the manifest). */
+    public bool $bleed = false;
+
+    /** Also combine the run's PDFs into one document per treatment. */
+    public bool $combine = false;
+
+    /** One export per numbered copy, edition sizes from the merge file. */
+    public bool $serialize = false;
+
+    /** @var list<string> treatments the current set knows (manifest-extendable) */
+    public array $treatmentOptions = [];
 
     public string $search = '';
 
@@ -174,11 +197,17 @@ class ControlPlane extends Component
             $this->{$key} = (string) Settings::get("paths.{$key}", $this->{$key});
         }
 
+        $this->treatmentOptions = array_keys(config('wotf.treatments'));
         $this->treatments = $this->validTreatments((array) Settings::get('paths.treatments', $this->treatments));
 
         $this->artDirs = (array) Settings::get('paths.artDirs', []);
+        $this->whiteDirs = (array) Settings::get('paths.whiteDirs', []);
         $this->proof = (bool) Settings::get('paths.proof', true);
         $this->ppi = ((int) Settings::get('paths.ppi', 300)) ?: 300; // erased last session → default
+
+        foreach (['cropMarks', 'registrationMarks', 'bleed', 'combine', 'serialize'] as $flag) {
+            $this->{$flag} = (bool) Settings::get("paths.{$flag}", false);
+        }
 
         // The manifest on disk is authoritative at startup: the profile the
         // dropdown shows must be the profile actually applied — the file may
@@ -221,7 +250,11 @@ class ControlPlane extends Component
             // no current window reference — a floating dialog still works
         }
 
-        $current = $target === 'artDirs' ? (end($this->artDirs) ?: '') : $this->{$target};
+        $current = match ($target) {
+            'artDirs' => end($this->artDirs) ?: '',
+            'whiteDirs' => end($this->whiteDirs) ?: '',
+            default => $this->{$target},
+        };
         if ($current !== '') {
             $dialog->defaultPath(is_dir($current) ? $current : dirname($current));
         }
@@ -230,6 +263,7 @@ class ControlPlane extends Component
             'manifestPath' => $dialog->title('Choose the set manifest (foundry.json)')->files()->filter('Manifest', ['json'])->open(),
             'coverPath' => $dialog->title('Choose a cover image for the set index')->files()->filter('Image', ['png', 'jpg', 'jpeg', 'gif', 'webp'])->open(),
             'artDirs' => $dialog->title('Add an artwork directory')->folders()->open(),
+            'whiteDirs' => $dialog->title('Add a white-layer directory')->folders()->open(),
             'destDir' => $dialog->title('Choose the output directory')->folders()->open(),
             'kitPath' => $dialog->title('Choose the build-kit folder (contains wotfLib.jsxinc)')->folders()->open(),
             'mergePath' => $dialog->title('Choose the merge file')->files()->filter('Merge file', ['csv', 'xlsx'])->open(),
@@ -243,6 +277,8 @@ class ControlPlane extends Component
 
         if ($target === 'artDirs') {
             $this->addArtDir($path);
+        } elseif ($target === 'whiteDirs') {
+            $this->addWhiteDir($path);
         } else {
             $this->{$target} = $path;
             $this->updated($target);
@@ -280,11 +316,17 @@ class ControlPlane extends Component
                 'kitPath' => $base->kitPath,
                 'templatePath' => $base->templatePath,
                 'artDirs' => $base->artDirs,
+                'whiteDirs' => $base->whiteDirs,
                 'coverPath' => $manifest->cover() ?? '',
                 'treatments' => $base->treatments,
                 'format' => $base->format,
                 'ppi' => (int) ($base->exportOptions['ppi'] ?? 300),
                 'proof' => $base->proof,
+                'cropMarks' => (bool) ($base->exportOptions['cropMarks'] ?? false),
+                'registrationMarks' => (bool) ($base->exportOptions['registrationMarks'] ?? false),
+                'bleed' => (bool) ($base->exportOptions['bleed'] ?? false),
+                'combine' => (bool) ($base->exportOptions['combine'] ?? false),
+                'serialize' => $base->serialize,
             ];
         } catch (Throwable) {
             $this->inherited = [];
@@ -420,18 +462,29 @@ class ControlPlane extends Component
         $this->kitPath = $config->kitPath;
         $this->templatePath = $config->templatePath;
         $this->artDirs = $config->artDirs;
+        $this->whiteDirs = $config->whiteDirs;
+        $this->treatmentOptions = array_keys($config->treatmentConfig) ?: array_keys(config('wotf.treatments'));
         $this->treatments = $this->validTreatments($config->treatments) ?: $this->treatments;
         $this->proof = $config->proof;
         $this->format = in_array($config->format, ['pdf', 'png'], true) ? $config->format : 'pdf';
         $this->ppi = ((int) ($config->exportOptions['ppi'] ?? $this->ppi)) ?: null;
+        $this->cropMarks = (bool) ($config->exportOptions['cropMarks'] ?? false);
+        $this->registrationMarks = (bool) ($config->exportOptions['registrationMarks'] ?? false);
+        $this->bleed = (bool) ($config->exportOptions['bleed'] ?? false);
+        $this->combine = (bool) ($config->exportOptions['combine'] ?? false);
+        $this->serialize = $config->serialize;
 
         foreach (['mergePath', 'kitPath', 'templatePath', 'format'] as $key) {
             Settings::put("paths.{$key}", $this->{$key});
         }
         Settings::put('paths.treatments', $this->treatments);
         Settings::put('paths.artDirs', $this->artDirs);
+        Settings::put('paths.whiteDirs', $this->whiteDirs);
         Settings::put('paths.proof', $this->proof);
         Settings::put('paths.ppi', $this->ppi);
+        foreach (['cropMarks', 'registrationMarks', 'bleed', 'combine', 'serialize'] as $flag) {
+            Settings::put("paths.{$flag}", $this->{$flag});
+        }
 
         $this->parseMerge();
     }
@@ -447,7 +500,9 @@ class ControlPlane extends Component
     {
         $default = $this->manifestPath !== ''
             ? $this->manifestPath
-            : ($this->mergePath !== '' ? dirname($this->mergePath).'/foundry.json' : 'foundry.json');
+            : ($this->mergePath !== '' && ! \App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)
+                ? dirname($this->mergePath).'/foundry.json'
+                : 'foundry.json');
 
         $path = $default;
 
@@ -478,6 +533,13 @@ class ControlPlane extends Component
             return;
         }
 
+        if ($this->manifestPath === '' && \App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)) {
+            // A linked sheet has no folder to sit next to.
+            $this->saveManifestAs();
+
+            return;
+        }
+
         $this->persistManifest($this->manifestPath !== '' ? $this->manifestPath : dirname($this->mergePath).'/foundry.json');
     }
 
@@ -491,12 +553,22 @@ class ControlPlane extends Component
             'kit' => rtrim($this->kitPath, '/'),
             'template' => $this->templatePath,
             'artDirs' => array_map(fn ($dir) => rtrim($dir, '/'), $this->artDirs),
+            'whiteDirs' => array_map(fn ($dir) => rtrim($dir, '/'), $this->whiteDirs),
             'treatment' => $this->treatments,
             'proof' => $this->proof,
+            'serialize' => $this->serialize,
+            // The flags are written explicitly (true AND false) — saves merge
+            // into the existing manifest, so an omitted false could never
+            // switch an option off again.
             'export' => array_filter([
                 'format' => $this->format,
                 'ppi' => $this->format === 'png' ? $this->ppi : null,
-            ]),
+            ]) + [
+                'cropMarks' => $this->cropMarks,
+                'registrationMarks' => $this->registrationMarks,
+                'bleed' => $this->bleed,
+                'combine' => $this->combine,
+            ],
         ];
     }
 
@@ -517,13 +589,20 @@ class ControlPlane extends Component
             'kit' => rtrim((string) ($this->inherited['kitPath'] ?? ''), '/'),
             'template' => $this->inherited['templatePath'] ?? '',
             'artDirs' => $this->inherited['artDirs'] ?? [],
+            'whiteDirs' => $this->inherited['whiteDirs'] ?? [],
             'treatment' => $this->inherited['treatments'] ?? [],
             'proof' => $this->inherited['proof'] ?? true,
+            'serialize' => $this->inherited['serialize'] ?? false,
             'cover' => $this->inherited['coverPath'] ?? '',
             'export' => array_filter([
                 'format' => $this->inherited['format'] ?? 'pdf',
                 'ppi' => ($this->inherited['format'] ?? 'pdf') === 'png' ? ($this->inherited['ppi'] ?? 300) : null,
-            ]),
+            ]) + [
+                'cropMarks' => $this->inherited['cropMarks'] ?? false,
+                'registrationMarks' => $this->inherited['registrationMarks'] ?? false,
+                'bleed' => $this->inherited['bleed'] ?? false,
+                'combine' => $this->inherited['combine'] ?? false,
+            ],
         ];
 
         return array_filter(
@@ -630,6 +709,38 @@ class ControlPlane extends Component
         $this->artDirsChanged();
     }
 
+    public function addWhiteDir(?string $path = null): void
+    {
+        $path = rtrim(trim($path ?? $this->newWhiteDir), '/');
+        $this->newWhiteDir = '';
+
+        if ($path === '' || in_array($path, $this->whiteDirs, true)) {
+            return;
+        }
+
+        $this->whiteDirs[] = $path;
+        Settings::put('paths.whiteDirs', $this->whiteDirs);
+    }
+
+    public function removeWhiteDir(int $index): void
+    {
+        unset($this->whiteDirs[$index]);
+        $this->whiteDirs = array_values($this->whiteDirs);
+        Settings::put('paths.whiteDirs', $this->whiteDirs);
+    }
+
+    public function moveWhiteDir(int $index, int $direction): void
+    {
+        $swap = $index + ($direction < 0 ? -1 : 1);
+
+        if (! isset($this->whiteDirs[$index], $this->whiteDirs[$swap])) {
+            return;
+        }
+
+        [$this->whiteDirs[$index], $this->whiteDirs[$swap]] = [$this->whiteDirs[$swap], $this->whiteDirs[$index]];
+        Settings::put('paths.whiteDirs', $this->whiteDirs);
+    }
+
     public function removeArtDir(int $index): void
     {
         unset($this->artDirs[$index]);
@@ -678,11 +789,13 @@ class ControlPlane extends Component
             $this->mode = $this->selected === [] ? 'all' : 'selected';
         }
 
-        // A hand-typed relative path (browser mode) resolves against the set's folder.
+        // A hand-typed relative path (browser mode) resolves against the
+        // set's folder — URLs (a linked Google Sheet) are left alone.
         if (in_array($property, ['mergePath', 'kitPath', 'templatePath'], true)
             && $this->manifestPath !== ''
             && $this->{$property} !== ''
-            && ! str_starts_with($this->{$property}, '/')) {
+            && ! str_starts_with($this->{$property}, '/')
+            && ! \App\Merge\GoogleSheetFetcher::isUrl($this->{$property})) {
             $this->{$property} = dirname($this->manifestPath).'/'.$this->{$property};
         }
 
@@ -696,6 +809,10 @@ class ControlPlane extends Component
 
         if ($property === 'ppi') {
             Settings::put('paths.ppi', $this->ppi);
+        }
+
+        if (in_array($property, ['cropMarks', 'registrationMarks', 'bleed', 'combine', 'serialize'], true)) {
+            Settings::put("paths.{$property}", $this->{$property});
         }
 
         if ($property === 'manifestPath') {
@@ -758,7 +875,10 @@ class ControlPlane extends Component
         $linter = new MergeLinter(config('wotf.art_extensions'));
 
         try {
-            $merge = (new MergeFileParser)->parse($this->mergePath);
+            // A linked Google Sheet downloads first (cached briefly — this
+            // runs on many UI interactions, not just merge changes).
+            $localMerge = (new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath, maxAgeSeconds: 60);
+            $merge = (new MergeFileParser)->parse($localMerge);
         } catch (Throwable $e) {
             $this->parseError = $e->getMessage();
 
@@ -855,19 +975,19 @@ class ControlPlane extends Component
     }
 
     /**
-     * @return list<string> the given treatments that the template knows
+     * @return list<string> the given treatments that the current set knows
      */
     private function validTreatments(array $treatments): array
     {
         return array_values(array_filter(
             $treatments,
-            fn ($t) => is_string($t) && array_key_exists($t, config('wotf.treatments')),
+            fn ($t) => is_string($t) && in_array($t, $this->treatmentOptions, true),
         ));
     }
 
     public function toggleTreatment(string $treatment): void
     {
-        if (! array_key_exists($treatment, config('wotf.treatments'))) {
+        if (! in_array($treatment, $this->treatmentOptions, true)) {
             return;
         }
 
@@ -877,10 +997,10 @@ class ControlPlane extends Component
                 $this->treatments = array_values(array_diff($this->treatments, [$treatment]));
             }
         } else {
-            // Keep config order so subfolders sort predictably.
+            // Keep declared order so subfolders sort predictably.
             $chosen = [...$this->treatments, $treatment];
             $this->treatments = array_values(array_filter(
-                array_keys(config('wotf.treatments')),
+                $this->treatmentOptions,
                 fn ($t) => in_array($t, $chosen, true),
             ));
         }
@@ -916,7 +1036,7 @@ class ControlPlane extends Component
 
     public function createSetContinue(): void
     {
-        if (! is_file($this->mergePath)) {
+        if (! is_file($this->mergePath) && ! \App\Merge\GoogleSheetFetcher::isSheetUrl($this->mergePath)) {
             $this->notify('Choose the merge file first — it defines the set.');
 
             return;
@@ -974,6 +1094,11 @@ class ControlPlane extends Component
                     $parts[] = '--art='.escapeshellarg($dir);
                 }
             }
+            if ($differs('whiteDirs')) {
+                foreach ($this->whiteDirs as $dir) {
+                    $parts[] = '--white='.escapeshellarg($dir);
+                }
+            }
             if ($differs('treatments')) {
                 foreach ($this->treatments as $treatment) {
                     $parts[] = '--treatment='.escapeshellarg($treatment);
@@ -981,6 +1106,17 @@ class ControlPlane extends Component
             }
             if ($differs('format')) {
                 $parts[] = '--format='.$this->format;
+            }
+            if ($differs('serialize')) {
+                $parts[] = $this->serialize ? '--serialize' : '--no-serialize';
+            }
+            foreach (['cropMarks' => '--crop-marks', 'registrationMarks' => '--registration-marks', 'combine' => '--combine'] as $flag => $arg) {
+                if ($differs($flag) && $this->{$flag}) {
+                    $parts[] = $arg;
+                }
+            }
+            if ($differs('bleed') && $this->bleed) {
+                $parts[] = '--bleed=doc';
             }
         } else {
             $parts[] = '--merge='.escapeshellarg($this->mergePath ?: '…');
@@ -991,10 +1127,24 @@ class ControlPlane extends Component
             foreach ($this->artDirs as $dir) {
                 $parts[] = '--art='.escapeshellarg($dir);
             }
+            foreach ($this->whiteDirs as $dir) {
+                $parts[] = '--white='.escapeshellarg($dir);
+            }
             foreach ($this->treatments as $treatment) {
                 $parts[] = '--treatment='.escapeshellarg($treatment);
             }
             $parts[] = '--format='.$this->format;
+            if ($this->serialize) {
+                $parts[] = '--serialize';
+            }
+            foreach (['cropMarks' => '--crop-marks', 'registrationMarks' => '--registration-marks', 'combine' => '--combine'] as $flag => $arg) {
+                if ($this->{$flag}) {
+                    $parts[] = $arg;
+                }
+            }
+            if ($this->bleed) {
+                $parts[] = '--bleed=doc';
+            }
         }
 
         if (! $this->proof) {
@@ -1267,7 +1417,7 @@ class ControlPlane extends Component
         $path = rtrim($path, '/');
 
         $ok = match ($field) {
-            'artDirs', 'kitPath', 'destDir' => is_dir($path),
+            'artDirs', 'whiteDirs', 'kitPath', 'destDir' => is_dir($path),
             'mergePath', 'templatePath' => is_file($path),
             default => false,
         };
@@ -1275,6 +1425,7 @@ class ControlPlane extends Component
         if (! $ok) {
             $this->notify(match ($field) {
                 'artDirs' => 'Drop a folder to add it as an art directory.',
+                'whiteDirs' => 'Drop a folder to add it as a white-layer directory.',
                 'kitPath' => 'Drop the build-kit folder here.',
                 'destDir' => 'Drop a folder to use as the destination.',
                 'mergePath' => 'Drop a .csv or .xlsx merge file here.',
@@ -1287,6 +1438,12 @@ class ControlPlane extends Component
 
         if ($field === 'artDirs') {
             $this->addArtDir($path);
+
+            return;
+        }
+
+        if ($field === 'whiteDirs') {
+            $this->addWhiteDir($path);
 
             return;
         }
@@ -1590,7 +1747,7 @@ class ControlPlane extends Component
         $artDirs = array_map(fn ($dir) => rtrim($dir, '/'), $this->artDirs);
 
         foreach ([
-            'merge file' => is_file($this->mergePath),
+            'merge file' => is_file($this->mergePath) || \App\Merge\GoogleSheetFetcher::isSheetUrl($this->mergePath),
             'art directory (add at least one)' => $artDirs !== [],
             'build kit (folder containing wotfLib.jsxinc)' => is_file(rtrim($this->kitPath, '/').'/'.config('wotf.kit_library')),
             'template' => is_file($this->templatePath),
@@ -1636,7 +1793,8 @@ class ControlPlane extends Component
         }
 
         try {
-            $merge = (new MergeFileParser)->parse($this->mergePath);
+            // Builds always fetch a linked sheet fresh — no stale cache.
+            $merge = (new MergeFileParser)->parse((new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath));
             $run = app(ExportPlanner::class)->plan(
                 $merge,
                 $this->buildConfig($artDirs),
@@ -1668,17 +1826,28 @@ class ControlPlane extends Component
      */
     private function buildConfig(array $artDirs): \App\Manifest\BuildConfig
     {
+        $pdfOptions = $this->format === 'pdf' ? [
+            'cropMarks' => $this->cropMarks,
+            'registrationMarks' => $this->registrationMarks,
+            'bleed' => $this->bleed,
+            'combine' => $this->combine,
+        ] : [];
+
+        $whiteDirs = array_map(fn ($dir) => rtrim($dir, '/'), $this->whiteDirs);
+
         $overrides = [
             'merge' => $this->mergePath,
             'kit' => rtrim($this->kitPath, '/'),
             'template' => $this->templatePath,
             'artDirs' => $artDirs,
+            'whiteDirs' => $whiteDirs,
             'treatment' => $this->treatments,
             'proof' => $this->proof,
+            'serialize' => $this->serialize,
             'export' => array_filter([
                 'format' => $this->format,
                 'ppi' => $this->format === 'png' ? $this->ppi : null,
-            ]),
+            ]) + $pdfOptions,
         ];
 
         if ($this->manifestPath !== '' && is_file($this->manifestPath)) {
@@ -1697,8 +1866,10 @@ class ControlPlane extends Component
             treatments: $this->treatments,
             proof: $this->proof,
             format: $this->format,
-            exportOptions: $this->format === 'png' ? ['ppi' => $this->ppi] : [],
+            exportOptions: ($this->format === 'png' ? ['ppi' => $this->ppi] : []) + $pdfOptions,
             pipeline: null,
+            whiteDirs: $whiteDirs,
+            serialize: $this->serialize,
         );
     }
 
@@ -1800,7 +1971,6 @@ class ControlPlane extends Component
             'issueGroups' => $issueGroups,
             'fileLevelIssues' => array_values(array_filter($this->issues, fn ($i) => $i['row'] === null)),
             'currentItemName' => $activeRun?->items()->where('status', 'running')->value('name'),
-            'treatmentOptions' => array_keys(config('wotf.treatments')),
             'pipeline' => config('wotf.pipeline'),
             'recentSets' => collect((array) Settings::get('recentSets', []))->sortByDesc('lastOpened'),
             'cardDetail' => $this->cardDetail(),

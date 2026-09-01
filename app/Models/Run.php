@@ -13,6 +13,10 @@ class Run extends Model
     protected $casts = [
         'art_dirs' => 'array',
         'treatments' => 'array',
+        'treatment_layers' => 'array',
+        'white_dirs' => 'array',
+        'serialization' => 'array',
+        'keywords' => 'array',
         'proof' => 'boolean',
         'export_options' => 'array',
         'pipeline' => 'array',

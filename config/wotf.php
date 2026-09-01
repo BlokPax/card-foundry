@@ -99,7 +99,7 @@ return [
         ['step' => 'applyTreatmentFrame', 'label' => 'Treatment frame', 'opts' => ['treatment' => '@treatment', 'links' => '@links']],
         ['step' => 'treatmentChrome', 'label' => 'Treatment chrome', 'opts' => ['treatment' => '@treatment']],
         ['step' => 'placeArtInBox', 'label' => 'Place art in box', 'opts' => []],
-        ['step' => 'applyCardData', 'label' => 'Serials + first-edition stamp', 'opts' => ['csvPath' => '@csv', 'treatment' => '@treatment']],
+        ['step' => 'applyCardData', 'label' => 'Serials + first-edition stamp', 'opts' => ['csvPath' => '@csv', 'treatment' => '@treatment', 'numerator' => '@serial']],
         ['step' => 'autographLine', 'label' => 'Autograph line', 'opts' => ['csvPath' => '@csv']],
         ['step' => 'setName', 'label' => 'Set name footer', 'opts' => ['csvPath' => '@csv']],
     ],
