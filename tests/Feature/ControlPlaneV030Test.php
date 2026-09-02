@@ -76,7 +76,7 @@ class ControlPlaneV030Test extends TestCase
                 ->call('addWhiteDir')
                 ->call('saveToManifest');
 
-            $data = json_decode(file_get_contents($dir.'/foundry.json'), true);
+            $data = json_decode(file_get_contents($dir.'/.foundry/config.json'), true);
 
             $this->assertTrue($data['base']['export']['cropMarks']);
             $this->assertTrue($data['base']['export']['bleed']);

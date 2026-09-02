@@ -166,11 +166,12 @@ class SetIndexTest extends TestCase
             ->set('setName', 'TBC Reborn')
             ->call('saveToManifest');
 
-        $raw = json_decode(file_get_contents($this->dir.'/foundry.json'), true);
+        // Saving migrates the legacy file into .foundry/ — recents follow.
+        $raw = json_decode(file_get_contents($this->dir.'/.foundry/config.json'), true);
         $this->assertSame('TBC Reborn', $raw['set']);
 
         // The Sets-screen tile follows the rename.
-        $entry = Settings::get('recentSets', [])[$this->dir.'/foundry.json'];
+        $entry = Settings::get('recentSets', [])[$this->dir.'/.foundry/config.json'];
         $this->assertSame('TBC Reborn', $entry['set']);
     }
 
@@ -195,15 +196,16 @@ class SetIndexTest extends TestCase
 
     public function test_saving_a_new_set_defaults_the_name_from_the_merge(): void
     {
-        // No manifest yet: saving creates one next to the merge file, and the
-        // set name comes from the merge's Set Name column — not the folder.
+        // No manifest yet: saving creates one in the merge file's folder
+        // (.foundry layout), and the set name comes from the merge's
+        // Set Name column — not the folder.
         unlink($this->dir.'/foundry.json');
 
         Livewire::test(ControlPlane::class)
             ->set('mergePath', $this->dir.'/merge.csv')
             ->call('saveToManifest');
 
-        $raw = json_decode(file_get_contents($this->dir.'/foundry.json'), true);
+        $raw = json_decode(file_get_contents($this->dir.'/.foundry/config.json'), true);
         $this->assertSame('Trial by Combat', $raw['set']);
     }
 
@@ -234,7 +236,7 @@ class SetIndexTest extends TestCase
             ->call('saveToManifest')
             ->assertSet('defaultProfileName', 'Production');
 
-        $raw = json_decode(file_get_contents($this->dir.'/foundry.json'), true);
+        $raw = json_decode(file_get_contents($this->dir.'/.foundry/config.json'), true);
         $this->assertSame('Production', $raw['defaultProfileName']);
     }
 
@@ -328,7 +330,7 @@ class SetIndexTest extends TestCase
             ->set('coverPath', $uri)
             ->call('saveToManifest');
 
-        $raw = json_decode(file_get_contents($this->dir.'/foundry.json'), true);
+        $raw = json_decode(file_get_contents($this->dir.'/.foundry/config.json'), true);
         $this->assertSame($uri, $raw['base']['cover']);
         $this->assertArrayNotHasKey('cover', $raw['profiles']['preview']);
     }

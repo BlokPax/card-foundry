@@ -4,6 +4,9 @@ namespace App\Manifest;
 
 final class SetManifest
 {
+    /** The set folder relative paths resolve against (the parent of .foundry). */
+    public readonly string $baseDir;
+
     /**
      * @param  array<string,mixed>  $base
      * @param  array<string,array<string,mixed>>  $profiles
@@ -14,7 +17,10 @@ final class SetManifest
         public readonly array $base,
         public readonly array $profiles,
         public readonly string $defaultProfileName = 'Default',
-    ) {}
+        ?string $baseDir = null,
+    ) {
+        $this->baseDir = $baseDir ?? FoundryLayout::baseDirFor($path);
+    }
 
     /**
      * @return list<string>
@@ -183,7 +189,7 @@ final class SetManifest
             return $path;
         }
 
-        return $this->normalize(dirname($this->path).'/'.$path);
+        return $this->normalize($this->baseDir.'/'.$path);
     }
 
     private function normalize(string $path): string

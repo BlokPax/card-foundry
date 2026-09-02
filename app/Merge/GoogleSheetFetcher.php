@@ -30,9 +30,14 @@ final class GoogleSheetFetcher
     /**
      * A local filesystem path for any merge reference: plain paths pass
      * through; a Google Sheet URL is downloaded (or served from a cache
-     * copy no older than $maxAgeSeconds).
+     * copy no older than $maxAgeSeconds — PHP_INT_MAX means "any cached
+     * copy is fine", the app's cache-first mode).
+     *
+     * With a $cacheDir (the set's .foundry/cache), the copy syncs with the
+     * set and each fetch records a meta file ({source, sha256, fetchedAt})
+     * so change detection is a hash compare, not a re-parse.
      */
-    public function localize(string $mergeRef, int $maxAgeSeconds = 0): string
+    public function localize(string $mergeRef, int $maxAgeSeconds = 0, ?string $cacheDir = null): string
     {
         if (! self::isUrl($mergeRef)) {
             return $mergeRef;
@@ -44,10 +49,10 @@ final class GoogleSheetFetcher
             );
         }
 
-        $id = $m[1];
-        $gid = preg_match('/[#?&]gid=(\d+)/', $mergeRef, $g) ? $g[1] : '0';
+        [$id, $gid] = self::sheetKey($mergeRef);
 
-        $cached = storage_path("app/merge-cache/sheet-{$id}-{$gid}.csv");
+        $cached = ($cacheDir !== null ? rtrim($cacheDir, '/') : storage_path('app/merge-cache'))
+            ."/sheet-{$id}-{$gid}.csv";
 
         if ($maxAgeSeconds > 0 && is_file($cached) && time() - (int) filemtime($cached) <= $maxAgeSeconds) {
             return $cached;
@@ -85,6 +90,44 @@ final class GoogleSheetFetcher
             throw new MergeParseException("Could not write the downloaded sheet to {$cached}.");
         }
 
+        @file_put_contents(substr($cached, 0, -4).'.meta.json', json_encode([
+            'source' => $mergeRef,
+            'sha256' => hash('sha256', $body),
+            'fetchedAt' => time(),
+        ], JSON_UNESCAPED_SLASHES)."\n");
+
         return $cached;
+    }
+
+    /**
+     * The cached copy's meta (source, sha256, fetchedAt), or null when the
+     * sheet hasn't been downloaded to this cache yet.
+     *
+     * @return array{source:string,sha256:string,fetchedAt:int}|null
+     */
+    public function meta(string $mergeRef, ?string $cacheDir = null): ?array
+    {
+        if (! preg_match(self::URL_PATTERN, $mergeRef)) {
+            return null;
+        }
+
+        [$id, $gid] = self::sheetKey($mergeRef);
+
+        $path = ($cacheDir !== null ? rtrim($cacheDir, '/') : storage_path('app/merge-cache'))
+            ."/sheet-{$id}-{$gid}.meta.json";
+
+        $meta = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+
+        return is_array($meta) ? $meta : null;
+    }
+
+    /**
+     * @return array{0:string,1:string} [spreadsheet id, tab gid]
+     */
+    private static function sheetKey(string $mergeRef): array
+    {
+        preg_match(self::URL_PATTERN, $mergeRef, $m);
+
+        return [$m[1], preg_match('/[#?&]gid=(\d+)/', $mergeRef, $g) ? $g[1] : '0'];
     }
 }

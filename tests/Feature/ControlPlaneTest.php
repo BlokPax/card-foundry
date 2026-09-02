@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Livewire\ControlPlane;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -94,9 +95,7 @@ class ControlPlaneTest extends TestCase
             // Fields remain editable overrides after applying a profile.
             $component->set('format', 'pdf')->assertSet('format', 'pdf');
         } finally {
-            @unlink($dir.'/foundry.json');
-            @unlink($dir.'/merge.csv');
-            @rmdir($dir);
+            File::deleteDirectory($dir);
         }
     }
 
@@ -121,12 +120,10 @@ class ControlPlaneTest extends TestCase
                 ->assertSet('profile', 'social')
                 ->assertSet('showAdvanced', true); // lands in the setup view to configure the new profile
 
-            $raw = json_decode(file_get_contents($dir.'/foundry.json'), true);
+            $raw = json_decode(file_get_contents($dir.'/.foundry/config.json'), true); // saves migrate legacy configs into .foundry/
             $this->assertArrayHasKey('social', $raw['profiles']);
         } finally {
-            @unlink($dir.'/foundry.json');
-            @unlink($dir.'/merge.csv');
-            @rmdir($dir);
+            File::deleteDirectory($dir);
         }
     }
 
@@ -148,15 +145,13 @@ class ControlPlaneTest extends TestCase
                 ->call('saveToManifest')
                 ->assertSet('profile', 'social');
 
-            $raw = json_decode(file_get_contents($dir.'/foundry.json'), true);
+            $raw = json_decode(file_get_contents($dir.'/.foundry/config.json'), true); // saves migrate legacy configs into .foundry/
             $this->assertSame('png', $raw['profiles']['social']['export']['format']);
             $this->assertSame(200, $raw['profiles']['social']['export']['ppi']);
             // Profiles store overrides only — the inherited merge path is NOT snapshotted.
             $this->assertArrayNotHasKey('merge', $raw['profiles']['social']);
         } finally {
-            @unlink($dir.'/foundry.json');
-            @unlink($dir.'/merge.csv');
-            @rmdir($dir);
+            File::deleteDirectory($dir);
         }
     }
 
@@ -183,9 +178,7 @@ class ControlPlaneTest extends TestCase
                 ->set('manifestPath', '')
                 ->assertSet('showAdvanced', true);
         } finally {
-            @unlink($dir.'/foundry.json');
-            @unlink($dir.'/merge.csv');
-            @rmdir($dir);
+            File::deleteDirectory($dir);
         }
     }
 

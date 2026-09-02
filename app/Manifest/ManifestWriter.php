@@ -24,7 +24,7 @@ final class ManifestWriter
     {
         $data = $this->read($path);
 
-        $relativized = $this->relativize($values, dirname($path));
+        $relativized = $this->relativize($values, FoundryLayout::baseDirFor($path));
         $data['profiles'][$profile] = $replace
             ? $relativized
             : array_replace((array) ($data['profiles'][$profile] ?? []), $relativized);
@@ -39,7 +39,7 @@ final class ManifestWriter
     {
         $data = $this->read($path);
 
-        $data['base'] = array_replace((array) ($data['base'] ?? []), $this->relativize($values, dirname($path)));
+        $data['base'] = array_replace((array) ($data['base'] ?? []), $this->relativize($values, FoundryLayout::baseDirFor($path)));
 
         $this->write($path, $data);
     }
@@ -50,7 +50,7 @@ final class ManifestWriter
      */
     public function create(string $path, string $set, array $base, array $profiles = []): void
     {
-        $dir = dirname($path);
+        $dir = FoundryLayout::baseDirFor($path);
 
         $this->write($path, [
             'version' => 1,
@@ -138,11 +138,49 @@ final class ManifestWriter
 
     private function write(string $path, array $data): void
     {
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
 
-        if (@file_put_contents($path, $json."\n") === false) {
+        $dir = dirname($path);
+        if (! is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        // Atomic replace: a crash (or Dropbox syncing mid-write) never
+        // leaves a half-written config.
+        $tmp = $path.'.tmp';
+        if (@file_put_contents($tmp, $json) === false || ! @rename($tmp, $path)) {
+            @unlink($tmp);
+
             throw new ManifestException("Cannot write manifest: {$path}");
         }
+
+        $this->recordVersion($path, $json);
+    }
+
+    /**
+     * Every save lands an immutable copy in <set>/.foundry/versions/ —
+     * the complete history; config.json is just "current". Identical
+     * content is not re-recorded.
+     */
+    private function recordVersion(string $path, string $json): void
+    {
+        $dir = FoundryLayout::foundryDirFor($path).'/versions';
+
+        $versions = glob($dir.'/config-*.json') ?: [];
+        sort($versions);
+        $latest = end($versions);
+
+        $hash = md5($json);
+        if ($latest !== false && md5_file($latest) === $hash) {
+            return;
+        }
+
+        if (! is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $name = sprintf('config-%s-%s-%s.json', FoundryLayout::stamp(), FoundryLayout::user(), substr($hash, 0, 8));
+        @file_put_contents($dir.'/'.$name, $json);
     }
 
     /**

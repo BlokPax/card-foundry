@@ -37,6 +37,17 @@ final class ExportRunner
             throw new RuntimeException("Build kit is missing ".config('wotf.kit_library')." at: {$kit}");
         }
 
+        // A set may carry its own library (frozen or customized) in
+        // .foundry/scripts/ — it replaces the kit's for this set only.
+        $libPath = $kit.'/'.config('wotf.kit_library');
+        $scriptsOverride = false;
+        if (($foundryDir = $this->foundryDir($run)) !== null
+            && is_file($candidate = $foundryDir.'/scripts/'.config('wotf.kit_library'))) {
+            $libPath = $candidate;
+            $scriptsOverride = true;
+            $run->appendLog('Using the set\'s own library: .foundry/scripts/'.config('wotf.kit_library'));
+        }
+
         $merge = (new MergeFileParser)->parse($run->merge_path);
         $resolver = new ArtResolver($run->art_dirs, config('wotf.art_extensions'));
         $whiteResolver = ($run->white_dirs ?? []) !== []
@@ -59,7 +70,7 @@ final class ExportRunner
         foreach ($run->items()->where('status', 'pending')->orderBy('id')->get() as $item) {
             $item->update(['status' => 'running', 'started_at' => now()]);
 
-            [$error, $summary, $warnings, $output] = $this->buildCard($run, $item, $merge, $resolver, $whiteResolver, $generator, $kit, $workRoot);
+            [$error, $summary, $warnings, $output] = $this->buildCard($run, $item, $merge, $resolver, $whiteResolver, $generator, $kit, $libPath, $workRoot);
 
             $tag = count($run->treatments ?? []) > 1 && isset($item->payload['treatment'])
                 ? " [{$item->payload['treatment']}]"
@@ -97,7 +108,111 @@ final class ExportRunner
         ]);
         $run->appendLog("Run finished: {$run->completed} succeeded, {$run->failed} failed.");
 
+        $this->writeRunRecord($run, $libPath, $scriptsOverride);
+
         return $run;
+    }
+
+    /**
+     * The set's .foundry directory, when this run came from a manifest.
+     */
+    private function foundryDir(Run $run): ?string
+    {
+        if (! $run->manifest_path) {
+            return null;
+        }
+
+        return \App\Manifest\FoundryLayout::foundryDirFor((string) $run->manifest_path);
+    }
+
+    /**
+     * Drops an immutable record of the finished run into
+     * <set>/.foundry/runs/: the resolved parameters, content hashes of the
+     * JSX library and template, and a snapshot of the merge data. This is
+     * the durable "what built this set" history — the local database is
+     * per-machine and disposable. Recording must never fail a run.
+     */
+    private function writeRunRecord(Run $run, string $libPath, bool $scriptsOverride): void
+    {
+        try {
+            $foundryDir = $this->foundryDir($run);
+            if ($foundryDir === null) {
+                return;
+            }
+
+            $dir = $foundryDir.'/runs';
+            if (! is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+
+            $stem = sprintf(
+                '%s-%s-%s',
+                \App\Manifest\FoundryLayout::stamp(),
+                \App\Manifest\FoundryLayout::user(),
+                bin2hex(random_bytes(2)),
+            );
+
+            $snapshot = null;
+            if (is_file($run->merge_path)) {
+                $snapshot = "{$stem}.merge.csv";
+                @copy($run->merge_path, "{$dir}/{$snapshot}");
+            }
+
+            $failures = $run->items()->where('status', 'failed')->get()
+                ->map(fn ($item) => ['ref' => $item->image_ref ?: $item->card_code, 'error' => $item->error])
+                ->values()->all();
+
+            $record = [
+                'recordedAt' => now()->toIso8601String(),
+                'user' => \App\Manifest\FoundryLayout::user(),
+                'set' => $run->set_name,
+                'profile' => $run->profile,
+                'mode' => $run->mode,
+                'treatments' => $run->treatments,
+                'treatmentLayers' => $run->treatment_layers,
+                'proof' => $run->proof,
+                'format' => $run->format,
+                'exportOptions' => $run->export_options,
+                'serialization' => $run->serialization,
+                'keywords' => $run->keywords,
+                'pipeline' => $run->pipeline, // null = the app default of this app version
+                'artDirs' => $run->art_dirs,
+                'whiteDirs' => $run->white_dirs,
+                'outputDir' => $run->output_dir,
+                'kit' => [
+                    'path' => $run->kit_path,
+                    'lib' => $libPath,
+                    'libHash' => is_file($libPath) ? md5_file($libPath) : null,
+                    'scriptsOverride' => $scriptsOverride,
+                ],
+                'template' => [
+                    'path' => $run->template_path,
+                    'hash' => is_file($run->template_path) ? md5_file($run->template_path) : null,
+                ],
+                'merge' => [
+                    'path' => $run->merge_path,
+                    'snapshot' => $snapshot,
+                    'hash' => is_file($run->merge_path) ? md5_file($run->merge_path) : null,
+                ],
+                'totals' => [
+                    'planned' => $run->total,
+                    'completed' => $run->completed,
+                    'failed' => $run->failed,
+                ],
+                'failures' => $failures,
+                'startedAt' => $run->started_at?->toIso8601String(),
+                'finishedAt' => $run->finished_at?->toIso8601String(),
+            ];
+
+            file_put_contents(
+                "{$dir}/{$stem}.json",
+                json_encode($record, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n",
+            );
+
+            $run->appendLog("Run record saved: .foundry/runs/{$stem}.json");
+        } catch (\Throwable $e) {
+            $run->appendLog("  ⚠ Could not write the run record: {$e->getMessage()}");
+        }
     }
 
     /**
@@ -111,6 +226,7 @@ final class ExportRunner
         ?ArtResolver $whiteResolver,
         BuildScriptGenerator $generator,
         string $kit,
+        string $libPath,
         string $workRoot,
     ): array {
         $ref = $item->payload['ref'] ?? ($item->image_ref ?: $item->card_code);
@@ -158,6 +274,7 @@ final class ExportRunner
 
             $jsx = $generator->generate([
                 'kitPath' => $kit,
+                'libPath' => $libPath,
                 'workDoc' => $workDoc,
                 'csvPath' => $csv,
                 'outputFile' => $outputFile,

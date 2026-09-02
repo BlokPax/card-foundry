@@ -369,8 +369,10 @@ class ControlPlane extends Component
             return;
         }
 
+        $sheetReloaded = $this->refreshStaleSheet();
+
         if ($this->manifestStamp() === $this->manifestSeen) {
-            if (! $this->receivedUpdates) {
+            if (! $this->receivedUpdates && ! $sheetReloaded) {
                 $this->skipRender();
             }
 
@@ -378,6 +380,43 @@ class ControlPlane extends Component
         }
 
         $this->showManifestChanged = true;
+    }
+
+    /**
+     * Focus-time hash check on a linked sheet, throttled to one download
+     * per 5 minutes: re-fetch, compare the content hash, and reload the
+     * card list only when the sheet actually changed.
+     */
+    private function refreshStaleSheet(): bool
+    {
+        if (! \App\Merge\GoogleSheetFetcher::isSheetUrl($this->mergePath)) {
+            return false;
+        }
+
+        $fetcher = new \App\Merge\GoogleSheetFetcher;
+        $cacheDir = $this->mergeCacheDir();
+        $meta = $fetcher->meta($this->mergePath, $cacheDir);
+
+        if ($meta !== null && time() - (int) $meta['fetchedAt'] < 300) {
+            return false;
+        }
+
+        try {
+            $fetcher->localize($this->mergePath, cacheDir: $cacheDir);
+        } catch (Throwable) {
+            return false; // offline — the cached copy stays in charge
+        }
+
+        $after = $fetcher->meta($this->mergePath, $cacheDir)['sha256'] ?? null;
+
+        if ($after === ($meta['sha256'] ?? null)) {
+            return false;
+        }
+
+        $this->parseMerge();
+        $this->notify('Sheet changed — '.count($this->cards).' cards reloaded.', 'success');
+
+        return true;
     }
 
     /** Re-read foundry.json and re-apply the active profile. */
@@ -486,6 +525,17 @@ class ControlPlane extends Component
             Settings::put("paths.{$flag}", $this->{$flag});
         }
 
+        // Opening a set pulls a linked sheet fresh (within a 5-minute
+        // window); a failed download quietly keeps the cached copy.
+        if (\App\Merge\GoogleSheetFetcher::isSheetUrl($this->mergePath)) {
+            try {
+                (new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath, maxAgeSeconds: 300, cacheDir: $this->mergeCacheDir());
+            } catch (Throwable) {
+                // parseMerge falls back to the cache — or surfaces the error
+                // itself when there is none.
+            }
+        }
+
         $this->parseMerge();
     }
 
@@ -501,8 +551,8 @@ class ControlPlane extends Component
         $default = $this->manifestPath !== ''
             ? $this->manifestPath
             : ($this->mergePath !== '' && ! \App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)
-                ? dirname($this->mergePath).'/foundry.json'
-                : 'foundry.json');
+                ? \App\Manifest\FoundryLayout::configPathFor(dirname($this->mergePath))
+                : 'config.json');
 
         $path = $default;
 
@@ -540,7 +590,9 @@ class ControlPlane extends Component
             return;
         }
 
-        $this->persistManifest($this->manifestPath !== '' ? $this->manifestPath : dirname($this->mergePath).'/foundry.json');
+        $this->persistManifest($this->manifestPath !== ''
+            ? $this->manifestPath
+            : \App\Manifest\FoundryLayout::configPathFor(dirname($this->mergePath)));
     }
 
     /**
@@ -614,6 +666,44 @@ class ControlPlane extends Component
 
     private function persistManifest(string $path): bool
     {
+        // Compare-before-write: if the file changed on disk since we read
+        // it (another user, another machine), don't clobber — surface the
+        // reload prompt instead. Every save also lands in versions/, so
+        // even a race that slips through loses nothing.
+        if ($path === $this->manifestPath && $this->manifestSeen !== null
+            && is_file($path) && $this->manifestStamp() !== $this->manifestSeen) {
+            $this->showManifestChanged = true;
+            $this->notify('The set file changed on disk since you opened it — review before saving.', 'error');
+
+            return false;
+        }
+
+        // Saving a legacy foundry.json moves it into the .foundry/ layout
+        // first. Paths keep resolving against the set folder, so the
+        // config's relative paths survive the move untouched.
+        if (is_file($path) && ! \App\Manifest\FoundryLayout::isFoundryConfig($path)
+            && basename($path) === \App\Manifest\FoundryLayout::LEGACY) {
+            $migrated = \App\Manifest\FoundryLayout::configPathFor(dirname($path));
+
+            @mkdir(dirname($migrated), 0755, true);
+            if (@rename($path, $migrated)) {
+                if ($this->manifestPath === $path) {
+                    $this->manifestPath = $migrated;
+                    Settings::put('paths.manifestPath', $migrated);
+                }
+
+                $recents = (array) Settings::get('recentSets', []);
+                if (isset($recents[$path])) {
+                    $recents[$migrated] = $recents[$path];
+                    unset($recents[$path]);
+                    Settings::put('recentSets', $recents);
+                }
+
+                $path = $migrated;
+                $this->notify('Set config moved into .foundry/ — same folder, tidier home.', 'success');
+            }
+        }
+
         $target = trim($this->newProfileName) !== '' ? trim($this->newProfileName) : $this->profile;
         $values = $this->manifestValues();
         $creatingNamed = trim($this->newProfileName) !== '';
@@ -796,7 +886,7 @@ class ControlPlane extends Component
             && $this->{$property} !== ''
             && ! str_starts_with($this->{$property}, '/')
             && ! \App\Merge\GoogleSheetFetcher::isUrl($this->{$property})) {
-            $this->{$property} = dirname($this->manifestPath).'/'.$this->{$property};
+            $this->{$property} = \App\Manifest\FoundryLayout::baseDirFor($this->manifestPath).'/'.$this->{$property};
         }
 
         if (in_array($property, ['mergePath', 'kitPath', 'templatePath', 'destDir', 'manifestPath', 'format'], true)) {
@@ -816,6 +906,19 @@ class ControlPlane extends Component
         }
 
         if ($property === 'manifestPath') {
+            // Dropping/typing the set FOLDER opens its config (.foundry/config.json,
+            // or the legacy foundry.json beside the set files).
+            if ($this->manifestPath !== '' && is_dir($this->manifestPath)) {
+                $discovered = \App\Manifest\FoundryLayout::discover($this->manifestPath);
+                if ($discovered !== null) {
+                    $this->manifestPath = $discovered;
+                    Settings::put('paths.manifestPath', $discovered);
+                } else {
+                    $this->notify('No set config found in that folder (.foundry/config.json or foundry.json).');
+                    $this->manifestPath = '';
+                }
+            }
+
             $this->showAdvanced = $this->manifestPath === '';
             if ($this->manifestPath !== '') {
                 $this->applyManifest();
@@ -875,9 +978,14 @@ class ControlPlane extends Component
         $linter = new MergeLinter(config('wotf.art_extensions'));
 
         try {
-            // A linked Google Sheet downloads first (cached briefly — this
-            // runs on many UI interactions, not just merge changes).
-            $localMerge = (new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath, maxAgeSeconds: 60);
+            // A linked Google Sheet parses cache-first: any local copy wins,
+            // because this runs on many UI interactions. Fresh data comes
+            // from opening the set, the refresh button, or building.
+            $localMerge = (new \App\Merge\GoogleSheetFetcher)->localize(
+                $this->mergePath,
+                maxAgeSeconds: PHP_INT_MAX,
+                cacheDir: $this->mergeCacheDir(),
+            );
             $merge = (new MergeFileParser)->parse($localMerge);
         } catch (Throwable $e) {
             $this->parseError = $e->getMessage();
@@ -932,6 +1040,50 @@ class ControlPlane extends Component
                 Settings::put('recentSets', $recents);
             }
         }
+    }
+
+    /**
+     * The set's .foundry/cache — sheet downloads sync with the set; runs
+     * without a set fall back to app storage.
+     */
+    private function mergeCacheDir(): ?string
+    {
+        return $this->manifestPath !== ''
+            ? \App\Manifest\FoundryLayout::foundryDirFor($this->manifestPath).'/cache'
+            : null;
+    }
+
+    /**
+     * Re-download a linked sheet and report whether anything changed —
+     * the deliberate "pull the latest data" action.
+     */
+    public function refreshMerge(): void
+    {
+        if (! \App\Merge\GoogleSheetFetcher::isSheetUrl($this->mergePath)) {
+            return;
+        }
+
+        $fetcher = new \App\Merge\GoogleSheetFetcher;
+        $before = $fetcher->meta($this->mergePath, $this->mergeCacheDir())['sha256'] ?? null;
+
+        try {
+            $fetcher->localize($this->mergePath, cacheDir: $this->mergeCacheDir());
+        } catch (Throwable $e) {
+            $this->notify($e->getMessage(), 'error');
+
+            return;
+        }
+
+        $after = $fetcher->meta($this->mergePath, $this->mergeCacheDir())['sha256'] ?? null;
+
+        if ($before === $after) {
+            $this->notify('Sheet unchanged — the local copy is current.', 'success');
+
+            return;
+        }
+
+        $this->parseMerge();
+        $this->notify('Sheet updated — '.count($this->cards).' cards reloaded.', 'success');
     }
 
     /** True while the card list is narrowed by a search or a flag filter. */
@@ -1406,7 +1558,7 @@ class ControlPlane extends Component
             return null;
         }
 
-        return \App\Manifest\Portability::relativize($path, dirname($this->manifestPath));
+        return \App\Manifest\Portability::relativize($path, \App\Manifest\FoundryLayout::baseDirFor($this->manifestPath));
     }
 
     /**
@@ -1794,7 +1946,9 @@ class ControlPlane extends Component
 
         try {
             // Builds always fetch a linked sheet fresh — no stale cache.
-            $merge = (new MergeFileParser)->parse((new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath));
+            $merge = (new MergeFileParser)->parse(
+                (new \App\Merge\GoogleSheetFetcher)->localize($this->mergePath, cacheDir: $this->mergeCacheDir()),
+            );
             $run = app(ExportPlanner::class)->plan(
                 $merge,
                 $this->buildConfig($artDirs),

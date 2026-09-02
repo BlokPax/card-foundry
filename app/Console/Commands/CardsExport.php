@@ -104,12 +104,17 @@ class CardsExport extends Command
         }
 
         try {
-            // A linked Google Sheet merge downloads to a local CSV first.
+            // A linked Google Sheet merge downloads to a local CSV first —
+            // into the set's .foundry/cache when a manifest names the set.
             if (\App\Merge\GoogleSheetFetcher::isUrl($config->mergePath)) {
                 $this->components->info('Downloading the linked Google Sheet…');
             }
 
-            $merge = $parser->parse((new \App\Merge\GoogleSheetFetcher)->localize($config->mergePath));
+            $cacheDir = ($manifestOption = $this->option('manifest'))
+                ? \App\Manifest\FoundryLayout::foundryDirFor(\App\Manifest\FoundryLayout::discover($manifestOption) ?? $manifestOption).'/cache'
+                : null;
+
+            $merge = $parser->parse((new \App\Merge\GoogleSheetFetcher)->localize($config->mergePath, cacheDir: $cacheDir));
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 

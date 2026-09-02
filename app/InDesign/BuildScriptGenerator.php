@@ -64,7 +64,8 @@ final class BuildScriptGenerator
 
         $js = fn (mixed $value) => json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
-        $lib = $js(rtrim($params['kitPath'], '/').'/wotfLib.jsxinc');
+        // A set can carry its own frozen/custom library in .foundry/scripts/.
+        $lib = $js($params['libPath'] ?? rtrim($params['kitPath'], '/').'/wotfLib.jsxinc');
         $workDoc = $js($params['workDoc']);
         $csv = $js($params['csvPath']);
         $outFile = $js($params['outputFile']);

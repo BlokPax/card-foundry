@@ -6,6 +6,10 @@ final class ManifestLoader
 {
     public function load(string $path): SetManifest
     {
+        // A set folder resolves to its .foundry/config.json (or the legacy
+        // foundry.json beside the set files).
+        $path = FoundryLayout::discover($path) ?? $path;
+
         if (! is_file($path)) {
             throw new ManifestException("Manifest not found: {$path}");
         }
@@ -43,6 +47,7 @@ final class ManifestLoader
             $data['base'],
             $profiles,
             is_string($defaultName) && trim($defaultName) !== '' ? $defaultName : 'Default',
+            FoundryLayout::baseDirFor($path),
         );
     }
 }

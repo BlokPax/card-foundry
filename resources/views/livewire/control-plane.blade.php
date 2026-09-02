@@ -372,7 +372,11 @@
                                 <span class="min-w-0 flex-1">
                                     @if ($native)
                                         <span class="flex min-w-0 items-center gap-1.5 {{ $isInherit ? 'opacity-65' : '' }}">
-                                            @if ($value)
+                                            @if ($value && \App\Merge\GoogleSheetFetcher::isUrl($value))
+                                                <span class="truncate font-mono text-[11.5px] text-fg" title="{{ $value }}">{{ $value }}</span>
+                                                <span class="shrink-0 rounded bg-accent-bg px-1.5 py-0.5 text-[10px] font-semibold text-accent"
+                                                      title="Linked Google Sheet — downloaded into the set's .foundry/cache">Sheet</span>
+                                            @elseif ($value)
                                                 <x-path :path="$value" :display="$portable" />
                                                 <button wire:click="openInFinder({{ json_encode($value) }})" class="ghost-icon shrink-0" title="Show in Finder">
                                                     <flux:icon name="folder" variant="micro" />
@@ -395,6 +399,11 @@
                                     @endif
                                 </span>
                                 <span class="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                                    @if ($field === 'mergePath' && \App\Merge\GoogleSheetFetcher::isSheetUrl($value))
+                                        <flux:button size="xs" variant="subtle" wire:click="refreshMerge" title="Re-download the linked sheet">
+                                            <flux:icon name="arrow-path" variant="micro" />
+                                        </flux:button>
+                                    @endif
                                     @if ($native)
                                         <flux:button size="xs" variant="subtle" wire:click="pick('{{ $field }}')">Choose…</flux:button>
                                     @endif
