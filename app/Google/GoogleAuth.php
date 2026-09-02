@@ -28,7 +28,9 @@ use RuntimeException;
  */
 final class GoogleAuth
 {
-    public const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets.readonly';
+    // drive.file (non-sensitive) powers the Google Picker: the app can
+    // browse-and-be-granted exactly the files the user picks, nothing else.
+    public const SCOPES = 'openid email https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.file';
 
     private const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 
@@ -63,7 +65,7 @@ final class GoogleAuth
             }
         }
 
-        foreach (['google.refreshToken', 'google.accessToken', 'google.expiresAt', 'google.email'] as $key) {
+        foreach (['google.refreshToken', 'google.accessToken', 'google.expiresAt', 'google.email', 'google.scopes'] as $key) {
             Settings::forget($key);
         }
     }
@@ -113,8 +115,19 @@ final class GoogleAuth
         Settings::put('google.accessToken', $accessToken);
         Settings::put('google.expiresAt', time() + (int) $response->json('expires_in', 3600));
         Settings::put('google.email', $email);
+        Settings::put('google.scopes', (string) $response->json('scope', self::SCOPES));
 
         return $email;
+    }
+
+    /**
+     * Whether the stored connection was granted a scope. Connections from
+     * before scope tracking report false — reconnecting refreshes them.
+     */
+    public static function hasScope(string $scope): bool
+    {
+        return self::connected()
+            && in_array($scope, explode(' ', (string) Settings::get('google.scopes', '')), true);
     }
 
     /**

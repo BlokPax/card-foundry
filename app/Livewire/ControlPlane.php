@@ -1665,6 +1665,70 @@ class ControlPlane extends Component
         $this->notify('Google account disconnected.', 'success');
     }
 
+    // ── Google Sheet picker ─────────────────────────────────────────────
+
+    /**
+     * Open the Google Picker over the signed-in account's Drive — the
+     * browser-side widget does the listing (the only verification-free way
+     * to browse a user's sheets) and reports the pick back to sheetPicked().
+     */
+    public function openSheetPicker(): void
+    {
+        if (! \App\Google\GoogleAuth::connected()) {
+            $this->notify('Connect your Google account first — Preferences (⌘,) → Google account. The picker browses sheets as you.');
+
+            return;
+        }
+
+        if (! \App\Google\GoogleAuth::hasScope('https://www.googleapis.com/auth/drive.file')) {
+            $this->notify('Your Google connection predates the sheet picker — disconnect and reconnect in Preferences (⌘,) to grant it.');
+
+            return;
+        }
+
+        if (($apiKey = (string) config('services.google.api_key')) === '') {
+            $this->notify('The sheet picker needs GOOGLE_API_KEY (an API key with the Google Picker API enabled).', 'error');
+
+            return;
+        }
+
+        try {
+            $token = (new \App\Google\GoogleAuth)->accessToken();
+        } catch (Throwable $e) {
+            $this->notify($e->getMessage(), 'error');
+
+            return;
+        }
+
+        $this->dispatch('open-google-picker',
+            token: (string) $token,
+            apiKey: $apiKey,
+            appId: (string) config('services.google.app_id'),
+        );
+    }
+
+    /** Sets-screen entry: a fresh set whose merge is a picked sheet. */
+    public function startCreateFromSheet(): void
+    {
+        $this->startCreateSet();
+        $this->openSheetPicker();
+    }
+
+    #[\Livewire\Attributes\On('sheet-picked')]
+    public function sheetPicked(string $id, string $name = ''): void
+    {
+        if ($id === '' || ! preg_match('/^[A-Za-z0-9_-]+$/', $id)) {
+            return;
+        }
+
+        $this->mergePath = "https://docs.google.com/spreadsheets/d/{$id}/edit";
+        $this->updated('mergePath');
+
+        if ($this->parseError === null) {
+            $this->notify('Linked Google Sheet'.($name !== '' ? " “{$name}”" : '').' — '.count($this->cards).' cards.', 'success');
+        }
+    }
+
     /**
      * The info modal's exit ramp: close it and open the editor.
      */

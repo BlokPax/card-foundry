@@ -42,6 +42,11 @@ return [
         'client_id' => env('GOOGLE_OAUTH_CLIENT_ID'),
         'client_secret' => env('GOOGLE_OAUTH_CLIENT_SECRET'),
         'redirect_port' => (int) env('GOOGLE_OAUTH_PORT', 8734),
+        // The Google Picker ("choose a sheet from my Drive") additionally
+        // needs a plain API key with the Picker API enabled, and the Cloud
+        // project number for per-file drive.file grants.
+        'api_key' => env('GOOGLE_API_KEY'),
+        'app_id' => env('GOOGLE_PROJECT_NUMBER'),
     ],
 
 ];

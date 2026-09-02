@@ -1,5 +1,8 @@
 import './bootstrap';
 import { cycleSelection, toggleRef } from './selection';
+import { initGooglePicker } from './googlePicker';
+
+initGooglePicker();
 
 // Real filesystem paths of files/folders dropped from Finder. Electron ≥ 32
 // removed File.path; webUtils.getPathForFile is its replacement and is

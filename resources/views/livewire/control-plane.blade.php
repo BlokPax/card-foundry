@@ -194,6 +194,7 @@
                     <div class="mt-1 flex gap-2">
                         <flux:button wire:click="pick('manifestPath')">Open a set…</flux:button>
                         <flux:button variant="subtle" wire:click="startCreateSet">Create a set…</flux:button>
+                        <flux:button variant="subtle" wire:click="startCreateFromSheet" title="Pick a merge sheet from your Google Drive">From Google Sheet…</flux:button>
                     </div>
                 </div>
             @else
@@ -241,6 +242,11 @@
                                 class="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-accent-line text-accent transition hover:border-accent hover:brightness-110">
                             <flux:icon name="plus" class="size-5" />
                             <span class="text-[13px] font-medium">Create a set…</span>
+                        </button>
+                        <button wire:click="startCreateFromSheet" title="Pick a merge sheet from your Google Drive"
+                                class="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-line text-fg-subtle transition hover:border-line-strong hover:text-fg">
+                            <flux:icon name="table-cells" class="size-5" />
+                            <span class="text-[13px] font-medium">From Google Sheet…</span>
                         </button>
                     </div>
                 </div>
@@ -1207,15 +1213,25 @@
                                 <span class="field-label">{{ $label }}</span>
                                 @if ($native)
                                     <span class="flex min-w-0 flex-1">
-                                        @if ($this->{$field})
+                                        @if ($this->{$field} && \App\Merge\GoogleSheetFetcher::isUrl($this->{$field}))
+                                            <span class="truncate font-mono text-[11.5px] text-fg" title="{{ $this->{$field} }}">{{ $this->{$field} }}</span>
+                                        @elseif ($this->{$field})
                                             <x-path :path="$this->{$field}" />
                                         @else
                                             <span class="text-[11.5px] text-fg-subtle italic">{{ $hint }}</span>
                                         @endif
                                     </span>
+                                    @if ($field === 'mergePath')
+                                        <flux:button size="xs" variant="subtle" wire:click="openSheetPicker" title="Pick a sheet from your Google Drive">Google Sheets…</flux:button>
+                                    @endif
                                     <flux:button size="xs" variant="subtle" wire:click="pick('{{ $field }}')">Choose…</flux:button>
                                 @else
-                                    <flux:input size="sm" wire:model.blur="{{ $field }}" placeholder="{{ $hint }}" class="flex-1 font-mono" />
+                                    <span class="flex min-w-0 flex-1 items-center gap-1.5">
+                                        <flux:input size="sm" wire:model.blur="{{ $field }}" placeholder="{{ $hint }}" class="flex-1 font-mono" />
+                                        @if ($field === 'mergePath')
+                                            <flux:button size="xs" variant="subtle" wire:click="openSheetPicker" title="Pick a sheet from your Google Drive">Sheets…</flux:button>
+                                        @endif
+                                    </span>
                                 @endif
                             </div>
                         @endforeach
@@ -1244,7 +1260,8 @@
 
                     <div class="mt-4 flex justify-end gap-2">
                         <flux:button size="sm" variant="subtle" wire:click="$set('showCreateWizard', false)">Cancel</flux:button>
-                        <flux:button size="sm" variant="filled" wire:click="createSetContinue" :disabled="! is_file($mergePath)">Continue</flux:button>
+                        <flux:button size="sm" variant="filled" wire:click="createSetContinue"
+                            :disabled="! is_file($mergePath) && ! \App\Merge\GoogleSheetFetcher::isSheetUrl($mergePath)">Continue</flux:button>
                     </div>
                 @else
                     <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">Name the set and, if you like, give it a cover for the Sets screen.</p>
