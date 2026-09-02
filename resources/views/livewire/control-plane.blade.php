@@ -417,6 +417,9 @@
                                             <flux:icon name="arrow-path" variant="micro" />
                                         </flux:button>
                                     @endif
+                                    @if ($field === 'mergePath')
+                                        <flux:button size="xs" variant="subtle" wire:click="openSheetPicker" title="Pick a sheet from your Google Drive">Google Sheets…</flux:button>
+                                    @endif
                                     @if ($native)
                                         <flux:button size="xs" variant="subtle" wire:click="pick('{{ $field }}')">Choose…</flux:button>
                                     @endif

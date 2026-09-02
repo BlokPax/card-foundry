@@ -92,6 +92,46 @@ class SheetPickerTest extends TestCase
         $this->assertStringContainsString('GOOGLE_API_KEY', (string) $component->get('flash'));
     }
 
+    public function test_an_open_set_can_switch_to_a_picked_sheet(): void
+    {
+        $this->connect();
+        Http::fake([
+            'docs.google.com/*' => Http::response("Name,Type,Card Code,Set Name,@Image\nBeta,Wonder,2/398,TBC,TBC002\n"),
+        ]);
+
+        $dir = sys_get_temp_dir().'/wotf-swap-'.uniqid();
+        mkdir($dir.'/.foundry', 0755, true);
+        copy(base_path('tests/Fixtures/merge-sample.csv'), $dir.'/merge.csv');
+        file_put_contents($dir.'/.foundry/config.json', json_encode([
+            'version' => 2, 'set' => 'TBC', 'base' => ['merge' => 'merge.csv'], 'profiles' => [],
+        ]));
+
+        try {
+            $component = Livewire::test(ControlPlane::class)
+                ->set('manifestPath', $dir.'/.foundry/config.json')
+                ->assertSet('summary.cards', 5) // the local merge, before the switch
+                ->call('sheetPicked', 'other-sheet-42', 'Replacement')
+                ->assertSet('mergePath', 'https://docs.google.com/spreadsheets/d/other-sheet-42/edit')
+                ->assertSet('summary.cards', 1);
+
+            // A picked sheet is an override like any merge change — the set
+            // file keeps its merge until the user saves…
+            $this->assertSame(
+                'merge.csv',
+                json_decode(file_get_contents($dir.'/.foundry/config.json'), true)['base']['merge'],
+            );
+
+            // …and Save writes the sheet URL into the set.
+            $component->call('saveToManifest');
+            $this->assertSame(
+                'https://docs.google.com/spreadsheets/d/other-sheet-42/edit',
+                json_decode(file_get_contents($dir.'/.foundry/config.json'), true)['base']['merge'],
+            );
+        } finally {
+            File::deleteDirectory($dir);
+        }
+    }
+
     public function test_a_picked_sheet_becomes_the_linked_merge(): void
     {
         $this->connect();
