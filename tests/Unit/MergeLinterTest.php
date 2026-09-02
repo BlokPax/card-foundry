@@ -259,4 +259,14 @@ class MergeLinterTest extends TestCase
 
         $this->assertSame([], $this->linter->lint($file));
     }
+
+    public function test_absolute_image_paths_warn_as_machine_specific(): void
+    {
+        $issues = (new MergeLinter)->lint($this->makeFile([
+            $this->goodRow(['@Image' => '/Users/someone/Dropbox/Card Art/TBC197.psd']),
+        ]));
+
+        $this->assertHasIssueMatching($issues, 'full path', LintSeverity::Warning);
+        $this->assertSame('absolute-image-ref', collect($issues)->firstWhere('rule', 'absolute-image-ref')?->rule);
+    }
 }

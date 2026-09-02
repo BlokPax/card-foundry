@@ -119,4 +119,26 @@ class ArtResolverTest extends TestCase
 
         $this->assertNull($this->resolver()->resolve('Chuck Liddell - TBC - 02'));
     }
+
+    public function test_an_absolute_ref_resolves_directly_when_the_file_exists(): void
+    {
+        touch($this->setDir.'/direct.psd');
+
+        $resolver = new \App\Merge\ArtResolver([$this->celebDir], ['psd']);
+
+        $this->assertSame($this->setDir.'/direct.psd', $resolver->resolve($this->setDir.'/direct.psd'));
+    }
+
+    public function test_a_stale_absolute_ref_hunts_its_filename_in_the_art_dirs(): void
+    {
+        // A full path from a coworker's machine: the file isn't there, but
+        // its NAME is findable in this machine's art directories.
+        touch($this->setDir.'/TBC331.psd');
+
+        $resolver = new \App\Merge\ArtResolver([$this->setDir], ['psd']);
+
+        $this->assertSame($this->setDir.'/TBC331.psd', $resolver->resolve('/Users/someone-else/Dropbox/Card Art/TBC331.psd'));
+        $this->assertSame([$this->setDir.'/TBC331.psd'], $resolver->resolveAll('/Users/someone-else/Dropbox/Card Art/TBC331'));
+        $this->assertNull($resolver->resolve('/Users/someone-else/Dropbox/Card Art/missing.psd'));
+    }
 }

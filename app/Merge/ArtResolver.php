@@ -21,6 +21,16 @@ final class ArtResolver
 
     public function resolve(string $imageRef): ?string
     {
+        if (str_starts_with($imageRef, '/')) {
+            if (is_file($imageRef)) {
+                return $imageRef;
+            }
+
+            // A full path from someone else's machine: the path is dead
+            // here, but its filename is huntable like any other ref.
+            $imageRef = basename($imageRef);
+        }
+
         foreach ($this->directories as $directory) {
             if (($path = $this->findIn($directory, $imageRef)) !== null) {
                 return $path;
@@ -37,6 +47,14 @@ final class ArtResolver
      */
     public function resolveAll(string $imageRef): array
     {
+        if (str_starts_with($imageRef, '/')) {
+            if (is_file($imageRef)) {
+                return [$imageRef];
+            }
+
+            $imageRef = basename($imageRef);
+        }
+
         $matches = [];
         foreach ($this->directories as $directory) {
             if (($path = $this->findIn($directory, $imageRef)) !== null) {

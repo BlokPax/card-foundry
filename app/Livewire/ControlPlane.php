@@ -37,6 +37,7 @@ class ControlPlane extends Component
         'duplicate-code' => '{n} cards share a card code',
         'duplicate-image' => '{n} cards share artwork',
         'art-suffix-fallback' => '{n} cards using a different artwork format than the merge names',
+        'absolute-image-ref' => '{n} cards naming artwork by full path (machine-specific)',
         'denominator' => '{n} cards numbered out of set',
         'unknown-orbital' => '{n} cards with an unknown orbital',
         'missing-name' => '{n} cards missing a name',

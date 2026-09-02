@@ -147,6 +147,13 @@ final class MergeLinter
             $issues[] = new LintIssue(LintSeverity::Error, "Row {$record->row} is missing a Name.", row: $record->row, column: 'Name', rule: 'missing-name');
         }
 
+        if (str_starts_with($record->imageRef(), '/')) {
+            $issues[] = new LintIssue(LintSeverity::Warning,
+                "\"{$record->name()}\": @Image is a full path — machine-specific; prefer just the filename "
+                ."(\"".basename($record->imageRef())."\"), hunted in the art folders.",
+                row: $record->row, column: '@Image', rule: 'absolute-image-ref');
+        }
+
         if (in_array('@Image', $file->headers, true) && $record->imageRef() === '') {
             $issues[] = new LintIssue(LintSeverity::Error, "\"{$record->name()}\" has no @Image reference.", row: $record->row, column: '@Image', rule: 'missing-image-ref');
         }

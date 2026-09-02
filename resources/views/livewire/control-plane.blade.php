@@ -786,7 +786,10 @@
                                                               title="See what was searched, and where"
                                                               class="pill pill-warn shrink-0 cursor-pointer">artwork not found</span>
                                                     @endunless
-                                                    <span class="shrink-0 font-mono text-[11px] text-fg-subtle">{{ $card['ref'] }}</span>
+                                                    {{-- refs are sheet data — a pasted full path must truncate, never blow the row --}}
+                                                    <span class="max-w-44 shrink-0 truncate font-mono text-[11px] text-fg-subtle" title="{{ $card['ref'] }}">
+                                                        {{ str_contains($card['ref'], '/') ? basename($card['ref']) : $card['ref'] }}
+                                                    </span>
                                                     @if ($card['hasArt'])
                                                         @if ($card['artFallback'] ?? false)
                                                             <span role="button" tabindex="0" wire:click.stop="openArtPreview('{{ $card['ref'] }}')"
@@ -1595,8 +1598,8 @@
                             <h3 class="panel-title mb-2">Artwork search</h3>
                             <p class="text-[12px] text-fg-muted">
                                 Looked for
-                                <span class="font-mono text-[11px] text-fg">{{ $cardDetail['candidates'][0] }}</span>
-                                (then <span class="font-mono text-[11px]">{{ $cardDetail['card']['ref'] }}.{{ implode(' / .', config('wotf.art_extensions')) }}</span>)
+                                <span class="font-mono text-[11px] break-all text-fg">{{ $cardDetail['candidates'][0] }}</span>
+                                (then <span class="font-mono text-[11px] break-all">{{ $cardDetail['card']['ref'] }}.{{ implode(' / .', config('wotf.art_extensions')) }}</span>)
                                 in each of these folders, top to bottom:
                             </p>
 
