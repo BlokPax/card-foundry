@@ -44,23 +44,35 @@ class GoogleOAuthTest extends TestCase
         Settings::put('google.email', 'jim@example.com');
     }
 
-    public function test_connected_downloads_send_the_users_token(): void
+    public function test_connected_downloads_use_the_sheets_api_with_the_users_token(): void
     {
         $this->connect();
-        Http::fake(['docs.google.com/*' => Http::response("Name,@Image\nAlpha,TBC001\n")]);
+        $this->fakeSheetsApi();
 
         (new GoogleSheetFetcher)->localize(self::URL);
 
-        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'docs.google.com')
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'sheets.googleapis.com')
             && $r->header('Authorization') === ['Bearer access-1']);
+        Http::assertNotSent(fn (Request $r) => str_contains($r->url(), 'docs.google.com'));
+    }
+
+    private function fakeSheetsApi(array $extra = []): void
+    {
+        Http::fake($extra + [
+            'sheets.googleapis.com/v4/spreadsheets/locked-sheet?*' => Http::response([
+                'sheets' => [['properties' => ['sheetId' => 7, 'title' => 'Cards']]],
+            ]),
+            'sheets.googleapis.com/v4/spreadsheets/locked-sheet/values/*' => Http::response([
+                'values' => [['Name', '@Image'], ['Alpha', 'TBC001']],
+            ]),
+        ]);
     }
 
     public function test_an_expired_token_refreshes_first(): void
     {
         $this->connect(expiresIn: -10);
-        Http::fake([
+        $this->fakeSheetsApi([
             'oauth2.googleapis.com/token' => Http::response(['access_token' => 'access-2', 'expires_in' => 3600]),
-            'docs.google.com/*' => Http::response("Name\nOne\n"),
         ]);
 
         (new GoogleSheetFetcher)->localize(self::URL);
@@ -68,7 +80,7 @@ class GoogleOAuthTest extends TestCase
         Http::assertSent(fn (Request $r) => str_contains($r->url(), 'oauth2.googleapis.com/token')
             && str_contains($r->body(), 'grant_type=refresh_token')
             && str_contains($r->body(), 'refresh-1'));
-        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'docs.google.com')
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'sheets.googleapis.com')
             && $r->header('Authorization') === ['Bearer access-2']);
         $this->assertSame('access-2', Settings::get('google.accessToken'));
     }
@@ -86,7 +98,9 @@ class GoogleOAuthTest extends TestCase
     public function test_a_denied_sheet_names_the_signed_in_user(): void
     {
         $this->connect();
-        Http::fake(['docs.google.com/*' => Http::response('denied', 403)]);
+        Http::fake(['sheets.googleapis.com/*' => Http::response([
+            'error' => ['status' => 'PERMISSION_DENIED', 'message' => 'The caller does not have permission'],
+        ], 403)]);
 
         $this->expectException(MergeParseException::class);
         $this->expectExceptionMessageMatches('/jim@example\.com/');

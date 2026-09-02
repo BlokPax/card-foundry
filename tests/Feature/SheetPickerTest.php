@@ -37,6 +37,16 @@ class SheetPickerTest extends TestCase
         parent::tearDown();
     }
 
+    private function fakeSheetsApi(string $id, array $values): void
+    {
+        Http::fake([
+            "sheets.googleapis.com/v4/spreadsheets/{$id}?*" => Http::response([
+                'sheets' => [['properties' => ['sheetId' => 3, 'title' => 'Cards']]],
+            ]),
+            "sheets.googleapis.com/v4/spreadsheets/{$id}/values/*" => Http::response(['values' => $values]),
+        ]);
+    }
+
     private function connect(): void
     {
         Settings::put('google.refreshToken', 'refresh-1');
@@ -95,9 +105,7 @@ class SheetPickerTest extends TestCase
     public function test_an_open_set_can_switch_to_a_picked_sheet(): void
     {
         $this->connect();
-        Http::fake([
-            'docs.google.com/*' => Http::response("Name,Type,Card Code,Set Name,@Image\nBeta,Wonder,2/398,TBC,TBC002\n"),
-        ]);
+        $this->fakeSheetsApi('other-sheet-42', [['Name', 'Type', 'Card Code', 'Set Name', '@Image'], ['Beta', 'Wonder', '2/398', 'TBC', 'TBC002']]);
 
         $dir = sys_get_temp_dir().'/wotf-swap-'.uniqid();
         mkdir($dir.'/.foundry', 0755, true);
@@ -135,9 +143,7 @@ class SheetPickerTest extends TestCase
     public function test_a_picked_sheet_becomes_the_linked_merge(): void
     {
         $this->connect();
-        Http::fake([
-            'docs.google.com/*' => Http::response("Name,Type,Card Code,Set Name,@Image\nAlpha,Wonder,1/398,Picked Set,TBC001\n"),
-        ]);
+        $this->fakeSheetsApi('sheet-id-77', [['Name', 'Type', 'Card Code', 'Set Name', '@Image'], ['Alpha', 'Wonder', '1/398', 'Picked Set', 'TBC001']]);
 
         Livewire::test(ControlPlane::class)
             ->call('startCreateFromSheet')
