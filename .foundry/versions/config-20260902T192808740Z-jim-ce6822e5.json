@@ -1,0 +1,26 @@
+{
+    "version": 2,
+    "set": "TBC",
+    "base": {
+        "merge": "https://docs.google.com/spreadsheets/d/sheet-77/edit",
+        "kit": "",
+        "template": "",
+        "artDirs": [],
+        "whiteDirs": [],
+        "treatment": [
+            "Base Paper"
+        ],
+        "proof": true,
+        "serialize": false,
+        "export": {
+            "format": "pdf",
+            "cropMarks": false,
+            "registrationMarks": false,
+            "bleed": false,
+            "combine": false
+        },
+        "cover": ""
+    },
+    "profiles": [],
+    "appVersion": "0.3.0"
+}

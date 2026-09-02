@@ -280,6 +280,7 @@ class ControlPlane extends Component
             'coverPath' => $dialog->title('Choose a cover image for the set index')->files()->filter('Image', ['png', 'jpg', 'jpeg', 'gif', 'webp'])->open(),
             'artDirs' => $dialog->title('Add an artwork directory')->folders()->open(),
             'whiteDirs' => $dialog->title('Add a white-layer directory')->folders()->open(),
+            'setFolder' => $dialog->title("Choose the set's folder — it will hold the config, run history, and usually the art")->folders()->open(),
             'destDir' => $dialog->title('Choose the output directory')->folders()->open(),
             'kitPath' => $dialog->title('Choose the build-kit folder (contains wotfLib.jsxinc)')->folders()->open(),
             'mergePath' => $dialog->title('Choose the merge file')->files()->filter('Merge file', ['csv', 'xlsx'])->open(),
@@ -559,36 +560,85 @@ class ControlPlane extends Component
      * Write the current UI values into the manifest — the selected profile,
      * a new profile (newProfileName), or the base when no profile is chosen.
      */
+
+    /** The chosen home for a NEW set — the folder that receives .foundry/. */
+    public string $setFolder = '';
+
     /**
-     * Native flow: a real save dialog (directory + filename), then write.
+     * The folder a new set would naturally live in: beside a local merge
+     * file, else the first art directory. A linked sheet infers nothing.
+     */
+    private function defaultSetFolder(): string
+    {
+        if ($this->mergePath !== '' && ! \App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)) {
+            return dirname($this->mergePath);
+        }
+
+        return $this->artDirs[0] ?? '';
+    }
+
+    /**
+     * Save the current state as a NEW set. The user chooses the SET FOLDER
+     * — the directory that is the project: it receives .foundry/ (config,
+     * versions, run history) and usually holds the art — and the config is
+     * written inside it. Never a raw "save config.json" dialog.
      */
     public function saveManifestAs(): bool
     {
-        $default = $this->manifestPath !== ''
-            ? $this->manifestPath
-            : ($this->mergePath !== '' && ! \App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)
-                ? \App\Manifest\FoundryLayout::configPathFor(dirname($this->mergePath))
-                : 'config.json');
+        $folder = rtrim(trim($this->setFolder), '/');
 
-        $path = $default;
+        if ($folder === '') {
+            $folder = $this->defaultSetFolder();
+        }
 
-        if ($this->native) {
+        // No folder chosen or inferable: ask (natively, with a real picker).
+        if ($folder === '' && $this->native) {
+            $dialog = Dialog::new()->title("Choose the set's folder — it will hold the config, run history, and usually the art");
+
             try {
-                $picked = Dialog::new()->title('Save set manifest')->defaultPath($default)->save();
-            } catch (Throwable $e) {
-                $this->notify($e->getMessage(), 'error');
-
-                return false;
+                $dialog->asSheet();
+            } catch (Throwable) {
+                // no current window reference — a floating dialog still works
             }
+
+            $picked = $dialog->folders()->open();
 
             if (! is_string($picked) || $picked === '') {
                 return false; // cancelled
             }
 
-            $path = str_ends_with(strtolower($picked), '.json') ? $picked : $picked.'.json';
+            $folder = rtrim($picked, '/');
         }
 
-        return $this->persistManifest($path);
+        if ($folder === '') {
+            $this->notify("Choose the set's folder first — everything about the set (config, run history) lives there.");
+
+            return false;
+        }
+
+        if (! is_dir($folder) && ! @mkdir($folder, 0755, true)) {
+            $this->notify("Cannot create the set folder: {$folder}", 'error');
+
+            return false;
+        }
+
+        $config = \App\Manifest\FoundryLayout::configPathFor($folder);
+
+        if (is_file($config) || is_file($folder.'/'.\App\Manifest\FoundryLayout::LEGACY)) {
+            $this->notify('That folder already holds a set — open it from the Sets screen instead.', 'error');
+
+            return false;
+        }
+
+        $this->setFolder = $folder;
+
+        if (! $this->persistManifest($config)) {
+            return false;
+        }
+
+        $this->setFolder = ''; // don't leak into the next "save as"
+
+        return true;
     }
 
     public function saveToManifest(): void
@@ -1208,6 +1258,7 @@ class ControlPlane extends Component
         $this->selected = [];
         $this->syncMode();
 
+        $this->setFolder = '';
         $this->createStep = 1;
         $this->showCreateWizard = true;
     }
@@ -1223,6 +1274,11 @@ class ControlPlane extends Component
         // The merge file usually knows the set's name — prefill it.
         if (trim($this->setName) === '') {
             $this->setName = (string) ($this->summary['set'] ?? '');
+        }
+
+        // …and a local merge file implies the set's folder.
+        if (trim($this->setFolder) === '') {
+            $this->setFolder = $this->defaultSetFolder();
         }
 
         $this->createStep = 2;

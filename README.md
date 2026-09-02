@@ -85,7 +85,7 @@ Each set's config is a **base** plus named **profiles** that can override *any* 
 }
 ```
 
-Layering: app defaults ← base ← profile ← whatever you set in the UI/CLI for that run. In the app, pick the manifest and a profile — every field prefills but stays editable — and **Save** writes your current settings back to the profile (or a new one, or the base); **Create manifest** bootstraps a foundry.json from the current inputs. Export format (PDF/PNG + ppi) and the white plate toggle are always per-run choices in the interface.
+Layering: app defaults ← base ← profile ← whatever you set in the UI/CLI for that run. In the app, pick the manifest and a profile — every field prefills but stays editable — and **Save** writes your current settings back to the profile (or a new one, or the base). Creating a set asks for the **set folder** — the directory that *is* the project: it receives `.foundry/` and anchors every relative path. With a local merge file it defaults to that file's folder; with a linked sheet (which has no folder) you choose one explicitly, and a folder that doesn't exist yet is created. Export format (PDF/PNG + ppi) and the white plate toggle are always per-run choices in the interface.
 
 ### v0.3.0 manifest keys
 

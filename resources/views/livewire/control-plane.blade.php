@@ -1264,13 +1264,36 @@
                             :disabled="! is_file($mergePath) && ! \App\Merge\GoogleSheetFetcher::isSheetUrl($mergePath)">Continue</flux:button>
                     </div>
                 @else
-                    <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">Name the set and, if you like, give it a cover for the Sets screen.</p>
+                    <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">Name the set and choose its folder — everything about the set lives there.</p>
 
                     <div class="mt-4 space-y-3">
                         <label class="block">
                             <span class="field-label mb-1.5 block !w-auto">Set name</span>
                             <flux:input size="sm" wire:model.live.debounce.150ms="setName" placeholder="e.g. Trial by Combat" />
                         </label>
+
+                        <div class="block">
+                            <span class="field-label mb-1.5 block !w-auto">Set folder</span>
+                            <div class="flex items-center gap-1.5">
+                                @if ($native)
+                                    <span class="flex min-w-0 flex-1">
+                                        @if ($setFolder)
+                                            <x-path :path="$setFolder" />
+                                        @else
+                                            <span class="text-[11.5px] text-fg-subtle italic">Where this set lives — usually its art folder in Dropbox</span>
+                                        @endif
+                                    </span>
+                                    <flux:button size="xs" variant="subtle" wire:click="pick('setFolder')">Choose…</flux:button>
+                                @else
+                                    <flux:input size="sm" wire:model.blur="setFolder" placeholder="/path/to/the set's folder" class="flex-1 font-mono" />
+                                @endif
+                            </div>
+                            <span class="mt-1 block text-[10.5px] leading-snug text-fg-subtle">
+                                The folder is the project: it gets the config and run history (in a hidden
+                                .foundry folder) and is where relative paths anchor. A folder that doesn't
+                                exist yet is created.
+                            </span>
+                        </div>
 
                         <div class="row-compact group !h-auto !items-start !px-0 py-1">
                             <span class="field-label pt-1">Cover image</span>
