@@ -285,24 +285,36 @@
                         @endif
                     </div>
 
-                    {{-- the project folder + merge, one glance, no editor needed --}}
+                    {{-- the project + merge, one glance, no editor needed --}}
                     @if ($manifestPath || $mergePath)
-                        <div class="mt-0.5 flex min-w-0 items-center gap-1.5">
+                        <div class="mt-0.5 flex min-w-0 items-center gap-0.5">
                             @if ($manifestPath)
                                 @php $projectDir = \App\Manifest\FoundryLayout::baseDirFor($manifestPath); @endphp
-                                <x-path :path="$projectDir" class="!max-w-[24rem]" />
-                                <button wire:click="openInFinder({{ json_encode($projectDir) }})" class="ghost-icon shrink-0" title="Show the set's folder in Finder">
-                                    <flux:icon name="folder" variant="micro" />
-                                </button>
+                                <flux:tooltip content="{{ $projectDir }} — click to copy">
+                                    <button x-data="{ copied: false }" data-path="{{ $projectDir }}"
+                                            x-on:click="navigator.clipboard?.writeText($el.dataset.path); copied = true; setTimeout(() => copied = false, 1200)"
+                                            class="flex min-w-0 items-center gap-1 text-[11.5px] text-fg-subtle transition hover:text-fg">
+                                        <span class="truncate font-medium">{{ basename($projectDir) }}</span>
+                                        <span x-show="copied" x-cloak class="shrink-0 text-[10px] font-semibold text-ok-fg">copied</span>
+                                    </button>
+                                </flux:tooltip>
+                                <flux:tooltip content="Show the set's folder in Finder">
+                                    <button wire:click="openInFinder({{ json_encode($projectDir) }})"
+                                            class="ghost-icon shrink-0 opacity-50 transition hover:opacity-100"
+                                            aria-label="Show the set's folder in Finder">
+                                        <flux:icon name="folder" variant="micro" />
+                                    </button>
+                                </flux:tooltip>
                             @endif
                             @if ($mergePath)
                                 @php $sheetMerge = \App\Merge\GoogleSheetFetcher::isUrl($mergePath); @endphp
-                                <button wire:click="openMerge"
-                                        class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-fg-subtle transition hover:bg-surface-2 hover:text-fg"
-                                        title="{{ $sheetMerge ? 'Open the linked sheet in your browser' : 'Open the merge file' }}">
-                                    <flux:icon name="{{ $sheetMerge ? 'arrow-top-right-on-square' : 'table-cells' }}" variant="micro" />
-                                    {{ $sheetMerge ? 'Open sheet' : 'Open merge' }}
-                                </button>
+                                <flux:tooltip content="{{ $sheetMerge ? 'Open the linked sheet in Google Sheets' : 'Open the merge file' }}">
+                                    <button wire:click="openMerge"
+                                            class="ghost-icon shrink-0 opacity-50 transition hover:opacity-100"
+                                            aria-label="{{ $sheetMerge ? 'Open the linked sheet in Google Sheets' : 'Open the merge file' }}">
+                                        <flux:icon name="table-cells" variant="micro" />
+                                    </button>
+                                </flux:tooltip>
                             @endif
                         </div>
                     @endif
