@@ -50,7 +50,11 @@ Trial by Combat/
 ├── .foundry/
 │   ├── config.json     the live config — the only mutable file
 │   ├── versions/       every saved config, immutable, forever (rollback = copy one back)
-│   ├── runs/           one immutable record per build run + a merge-data snapshot
+│   ├── runs/           one immutable directory per build run
+│   │   └── 20260901T175512345Z-jim-a1b2/
+│   │       ├── run.json          resolved params, kit/template hashes, totals, versions
+│   │       ├── merge.csv         the exact merge data that built the cards
+│   │       └── build-script.jsx  one representative generated build script
 │   ├── cache/          downloaded sheet merges, hash-monitored
 │   └── scripts/        optional wotfLib.jsxinc override (frozen or per-set custom kit)
 ├── TBC Handoff.csv
@@ -59,7 +63,8 @@ Trial by Combat/
 
 - **Relative paths resolve against the set folder** (the parent of `.foundry`), so `_exports/CMYK` and above-the-set assets like `../shared/master.indd` or `../_WoTF InDesign Build Template` work exactly as they always have.
 - **Concurrency**: `versions/` and `runs/` files are write-once with collision-proof names (`{utc-stamp}-{user}-{suffix}`, Windows-safe — no colons). `config.json` is the only shared mutable file, guarded by compare-before-write: if it changed on disk since you opened it, the app offers a reload instead of clobbering — and since every save also lands in `versions/`, nothing is ever really lost.
-- **Run records** (`runs/*.json`) capture the resolved parameters, content hashes of `wotfLib.jsxinc` and the template, and a snapshot of the merge data — the concrete "what built this set" history, immune to later kit upgrades. Written for every manifest-driven run.
+- **Run records** (`runs/<id>/`) capture the resolved parameters, content hashes of `wotfLib.jsxinc` and the template (which may live *above* the set folder — hashing covers shared assets the record can't contain), the exact merge data, and one representative generated build script — the concrete "what built this set" history, immune to later kit upgrades. Written for every manifest-driven run.
+- **Versioned formats**: every `config.json` and `run.json` carries a `formatVersion` (schema — an older app refuses to *write* a file stamped newer than it understands, though reading and building still work) and the `appVersion` that wrote it. Future versions use the stamp to run migrations.
 - **`scripts/`**: if `scripts/wotfLib.jsxinc` exists, builds load it instead of the kit's — for freezing a released set or a one-set custom kit. Normal sets leave it absent and follow the shared kit.
 - **Legacy**: a bare `foundry.json` beside the set files still loads; the first save migrates it into `.foundry/config.json` (paths survive — resolution was always set-folder based). Opening the set *folder* finds the config either way.
 
@@ -110,7 +115,14 @@ Everything below layers the same way (base ← profile ← UI/CLI) and is option
 }
 ```
 
-- **`merge` as a Google Sheet URL** — link the sheet instead of exporting CSVs by hand. Share it as *Anyone with the link → Viewer*; the app downloads the tab named by `gid=` through the CSV export endpoint into `.foundry/cache/` with a content hash. The UI works cache-first (instant load, works offline) and re-downloads deliberately: on opening the set, via the ↻ button on the merge row, on window focus at most every 5 minutes (reloading only when the hash changed), and always fresh for a build.
+- **`merge` as a Google Sheet URL** — link the sheet instead of exporting CSVs by hand. The app downloads the tab named by `gid=` through the CSV export endpoint into `.foundry/cache/` with a content hash. The UI works cache-first (instant load, works offline) and re-downloads deliberately: on opening the set, via the ↻ button on the merge row, on window focus at most every 5 minutes (reloading only when the hash changed), and always fresh for a build. Access is either *Anyone with the link → Viewer*, or — better — a **protected sheet read as the signed-in user** (Preferences → Google account): the download acts as that person, so the sheet's own share list controls who can read it, org members and invited outside collaborators alike.
+
+## Preferences (⌘,)
+
+A macOS-style preferences panel (gear icon, or ⌘,) holds per-machine settings:
+
+- **Allow editing set configurations** — off, the machine builds cards and tweaks per-run options but can never save into a set's config: the accident guard for less-technical users; leave it on for the trusted few.
+- **Google account** — per-user OAuth sign-in (installed-app flow with PKCE via `google:connect`; the GUI button launches the same flow). Needs a "Desktop app" OAuth client in `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`; until the app passes Google's verification for the `spreadsheets.readonly` scope, add each user (external collaborators included) as a test user on the consent screen. Tokens live in per-install app data; disconnect revokes and forgets them.
 - **`whiteDirs`** — folders holding per-card white-ink plates, hunted by card ref exactly like `artDirs` (first match wins). The resolved file rides into the build (`whitePlate` stage `art` opt, or the `@white` pipeline placeholder); a missing plate warns but doesn't fail the card.
 - **`treatmentLayers`** — the treatment → template-layer table (the app defaults in `config/wotf.php` remain the fallback). Merged key-by-key, so you can restyle one treatment or add a brand-new one per set. The object form adds `serialColumn`: the merge column carrying that treatment's edition size.
 - **`serialize` / `serialization`** — with `serialize` on, every card exports once *per numbered copy* (`… [OCM] 03of25.pdf`), sized by the treatment's `serialColumn` (or the global `serialization.column`). The padded copy number reaches the pipeline as the `@serial` placeholder → `applyCardData`'s `numerator` opt; cards without a count build once, unnumbered.

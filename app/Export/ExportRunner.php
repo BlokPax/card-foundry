@@ -19,6 +19,9 @@ use RuntimeException;
  */
 final class ExportRunner
 {
+    /** The first generated build script of the run, snapshotted into the run record. */
+    private ?string $sampleJsx = null;
+
     public function __construct(
         private readonly BridgeClient $bridge = new BridgeClient,
         private readonly JsxPayloadBuilder $builder = new JsxPayloadBuilder,
@@ -62,6 +65,8 @@ final class ExportRunner
         if (! is_dir($workRoot)) {
             mkdir($workRoot, 0755, true);
         }
+
+        $this->sampleJsx = null;
 
         $run->update(['status' => 'running', 'started_at' => now()]);
         $run->appendLog("Run started — {$run->total} card(s), treatment \"{$run->treatment}\""
@@ -127,10 +132,13 @@ final class ExportRunner
 
     /**
      * Drops an immutable record of the finished run into
-     * <set>/.foundry/runs/: the resolved parameters, content hashes of the
-     * JSX library and template, and a snapshot of the merge data. This is
-     * the durable "what built this set" history — the local database is
-     * per-machine and disposable. Recording must never fail a run.
+     * <set>/.foundry/runs/<id>/: run.json (the resolved parameters plus
+     * content hashes of the JSX library and template), merge.csv (the
+     * exact data that built the cards), and build-script.jsx (one
+     * representative generated script — per-card scripts differ only in
+     * paths and serials). This is the durable "what built this set"
+     * history — the local database is per-machine and disposable.
+     * Recording must never fail a run.
      */
     private function writeRunRecord(Run $run, string $libPath, bool $scriptsOverride): void
     {
@@ -140,11 +148,6 @@ final class ExportRunner
                 return;
             }
 
-            $dir = $foundryDir.'/runs';
-            if (! is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-
             $stem = sprintf(
                 '%s-%s-%s',
                 \App\Manifest\FoundryLayout::stamp(),
@@ -152,10 +155,19 @@ final class ExportRunner
                 bin2hex(random_bytes(2)),
             );
 
+            $dir = "{$foundryDir}/runs/{$stem}";
+            if (! is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+
             $snapshot = null;
             if (is_file($run->merge_path)) {
-                $snapshot = "{$stem}.merge.csv";
+                $snapshot = 'merge.csv';
                 @copy($run->merge_path, "{$dir}/{$snapshot}");
+            }
+
+            if ($this->sampleJsx !== null) {
+                @file_put_contents("{$dir}/build-script.jsx", $this->sampleJsx);
             }
 
             $failures = $run->items()->where('status', 'failed')->get()
@@ -163,6 +175,8 @@ final class ExportRunner
                 ->values()->all();
 
             $record = [
+                'formatVersion' => \App\Manifest\FoundryLayout::RUN_FORMAT_VERSION,
+                'appVersion' => \App\Manifest\FoundryLayout::appVersion(),
                 'recordedAt' => now()->toIso8601String(),
                 'user' => \App\Manifest\FoundryLayout::user(),
                 'set' => $run->set_name,
@@ -184,6 +198,7 @@ final class ExportRunner
                     'lib' => $libPath,
                     'libHash' => is_file($libPath) ? md5_file($libPath) : null,
                     'scriptsOverride' => $scriptsOverride,
+                    'buildScript' => $this->sampleJsx !== null ? 'build-script.jsx' : null,
                 ],
                 'template' => [
                     'path' => $run->template_path,
@@ -205,11 +220,11 @@ final class ExportRunner
             ];
 
             file_put_contents(
-                "{$dir}/{$stem}.json",
+                "{$dir}/run.json",
                 json_encode($record, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n",
             );
 
-            $run->appendLog("Run record saved: .foundry/runs/{$stem}.json");
+            $run->appendLog("Run record saved: .foundry/runs/{$stem}/");
         } catch (\Throwable $e) {
             $run->appendLog("  ⚠ Could not write the run record: {$e->getMessage()}");
         }
@@ -287,6 +302,8 @@ final class ExportRunner
                 'whiteArt' => $whiteArt ?? '',
                 'keywords' => $run->keywords ?? [],
             ]);
+
+            $this->sampleJsx ??= $jsx;
 
             $result = $this->bridge->execute($this->builder->build($jsx, []));
 

@@ -18,8 +18,17 @@ final class SetManifest
         public readonly array $profiles,
         public readonly string $defaultProfileName = 'Default',
         ?string $baseDir = null,
+        public readonly int $formatVersion = 1,
     ) {
         $this->baseDir = $baseDir ?? FoundryLayout::baseDirFor($path);
+    }
+
+    /**
+     * Written by a newer app than this one — readable, but not writable.
+     */
+    public function newerThanApp(): bool
+    {
+        return $this->formatVersion > FoundryLayout::FORMAT_VERSION;
     }
 
     /**

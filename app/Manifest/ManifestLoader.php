@@ -48,6 +48,7 @@ final class ManifestLoader
             $profiles,
             is_string($defaultName) && trim($defaultName) !== '' ? $defaultName : 'Default',
             FoundryLayout::baseDirFor($path),
+            max(1, (int) ($data['version'] ?? 1)),
         );
     }
 }

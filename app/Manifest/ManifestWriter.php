@@ -133,11 +133,26 @@ final class ManifestWriter
             throw new ManifestException("Cannot update manifest — not readable JSON: {$path}");
         }
 
+        // Never write into a file from the future: a set saved by a newer
+        // app may hold config this app doesn't understand and would drop.
+        $version = (int) ($data['version'] ?? 1);
+        if ($version > FoundryLayout::FORMAT_VERSION) {
+            throw new ManifestException(
+                "This set was saved by a newer version of Card Foundry (format {$version}; this app writes format "
+                .FoundryLayout::FORMAT_VERSION.'). Update the app to edit it — building still works.',
+            );
+        }
+
         return $data;
     }
 
     private function write(string $path, array $data): void
     {
+        // Every write stamps the schema it used and the app that made it —
+        // the gate for older apps, the trigger for future migrations.
+        $data['version'] = FoundryLayout::FORMAT_VERSION;
+        $data['appVersion'] = FoundryLayout::appVersion();
+
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
 
         $dir = dirname($path);

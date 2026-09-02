@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    // Per-user Google sign-in for protected merge sheets: an OAuth client
+    // of type "Desktop app" from the Google Cloud console. See
+    // App\Google\GoogleAuth for the setup notes.
+    'google' => [
+        'client_id' => env('GOOGLE_OAUTH_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_OAUTH_CLIENT_SECRET'),
+        'redirect_port' => (int) env('GOOGLE_OAUTH_PORT', 8734),
+    ],
+
 ];

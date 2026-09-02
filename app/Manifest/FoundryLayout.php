@@ -33,6 +33,24 @@ final class FoundryLayout
     public const LEGACY = 'foundry.json';
 
     /**
+     * The config.json schema this app reads AND writes. Files stamped with
+     * a higher number were written by a newer app: they still load for
+     * viewing/building, but writes are refused so an old app can't damage
+     * a set it doesn't fully understand. Files stamped lower are migration
+     * candidates for future versions. (1 = the pre-stamp era.)
+     */
+    public const FORMAT_VERSION = 2;
+
+    /** The run-record (runs/<id>/run.json) schema. */
+    public const RUN_FORMAT_VERSION = 1;
+
+    /** The human-readable app version, stamped beside every formatVersion. */
+    public static function appVersion(): string
+    {
+        return (string) (config('nativephp.version') ?: 'dev');
+    }
+
+    /**
      * The config file for a set reference: a set folder (preferring
      * .foundry/config.json, falling back to legacy foundry.json), or a
      * config file path given directly. Null when a folder holds neither.

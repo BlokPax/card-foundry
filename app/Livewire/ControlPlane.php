@@ -183,6 +183,19 @@ class ControlPlane extends Component
 
     public string $flashLevel = 'warn'; // warn | success | error
 
+    // ── Preferences (⌘,) ────────────────────────────────────────────────
+    public bool $showPreferences = false;
+
+    /**
+     * Editing set configurations. On for the trusted few; switched off on
+     * an operator's machine, the whole config surface goes read-only while
+     * per-run tweaks (format, treatment, selection) keep working.
+     */
+    public bool $editorMode = true;
+
+    /** The signed-in Google identity ('' = not connected). */
+    public string $googleEmail = '';
+
     private function notify(string $message, string $level = 'warn'): void
     {
         $this->flash = $message;
@@ -208,6 +221,9 @@ class ControlPlane extends Component
         foreach (['cropMarks', 'registrationMarks', 'bleed', 'combine', 'serialize'] as $flag) {
             $this->{$flag} = (bool) Settings::get("paths.{$flag}", false);
         }
+
+        $this->editorMode = (bool) Settings::get('prefs.editorMode', true);
+        $this->refreshGoogleStatus();
 
         // The manifest on disk is authoritative at startup: the profile the
         // dropdown shows must be the profile actually applied — the file may
@@ -666,6 +682,12 @@ class ControlPlane extends Component
 
     private function persistManifest(string $path): bool
     {
+        if (! $this->editorMode) {
+            $this->notify('Editing set configurations is turned off on this machine — enable it in Preferences (⌘,).');
+
+            return false;
+        }
+
         // Compare-before-write: if the file changed on disk since we read
         // it (another user, another machine), don't clobber — surface the
         // reload prompt instead. Every save also lands in versions/, so
@@ -903,6 +925,10 @@ class ControlPlane extends Component
 
         if (in_array($property, ['cropMarks', 'registrationMarks', 'bleed', 'combine', 'serialize'], true)) {
             Settings::put("paths.{$property}", $this->{$property});
+        }
+
+        if ($property === 'editorMode') {
+            Settings::put('prefs.editorMode', $this->editorMode);
         }
 
         if ($property === 'manifestPath') {
@@ -1604,6 +1630,41 @@ class ControlPlane extends Component
         $this->updated($field);
     }
 
+    // ── Preferences ─────────────────────────────────────────────────────
+    public function openPreferences(): void
+    {
+        $this->refreshGoogleStatus();
+        $this->showPreferences = true;
+    }
+
+    public function refreshGoogleStatus(): void
+    {
+        $this->googleEmail = (string) (\App\Google\GoogleAuth::email() ?? '');
+    }
+
+    /**
+     * Launch the loopback OAuth flow in a child process; the browser does
+     * the rest, and the panel's poll picks up the connected identity.
+     */
+    public function connectGoogle(): void
+    {
+        if (! \App\Google\GoogleAuth::configured()) {
+            $this->notify('Google sign-in is not configured — set GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET first.', 'error');
+
+            return;
+        }
+
+        $this->launchArtisan(['google:connect'], 'wotf-google-connect');
+        $this->notify('Finish signing in to Google in your browser…', 'success');
+    }
+
+    public function disconnectGoogle(): void
+    {
+        \App\Google\GoogleAuth::disconnect();
+        $this->refreshGoogleStatus();
+        $this->notify('Google account disconnected.', 'success');
+    }
+
     /**
      * The info modal's exit ramp: close it and open the editor.
      */
@@ -1659,6 +1720,12 @@ class ControlPlane extends Component
      */
     public function deleteProfile(): void
     {
+        if (! $this->editorMode) {
+            $this->notify('Editing set configurations is turned off on this machine — enable it in Preferences (⌘,).');
+
+            return;
+        }
+
         if ($this->manifestPath === '' || $this->profile === '') {
             $this->notify("The {$this->defaultProfileName} profile is the set's base config — it can't be deleted.");
 

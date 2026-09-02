@@ -81,18 +81,18 @@ class RunRecordTest extends TestCase
         ], $extra))->assertExitCode(0);
     }
 
-    public function test_a_run_writes_an_immutable_record_with_hashes_and_merge_snapshot(): void
+    public function test_a_run_writes_an_immutable_record_directory(): void
     {
         $this->export();
 
-        $records = glob($this->setDir.'/.foundry/runs/*.json');
-        $this->assertCount(1, $records);
+        $dirs = glob($this->setDir.'/.foundry/runs/*', GLOB_ONLYDIR);
+        $this->assertCount(1, $dirs);
         $this->assertMatchesRegularExpression(
-            '/^\d{8}T\d{9}Z-[A-Za-z0-9_-]+-[0-9a-f]{4}\.json$/',
-            basename($records[0]),
+            '/^\d{8}T\d{9}Z-[A-Za-z0-9_-]+-[0-9a-f]{4}$/',
+            basename($dirs[0]),
         );
 
-        $record = json_decode(file_get_contents($records[0]), true);
+        $record = json_decode(file_get_contents($dirs[0].'/run.json'), true);
 
         $this->assertSame('Trial by Combat', $record['set']);
         $this->assertSame(['Base Paper'], $record['treatments']);
@@ -101,11 +101,18 @@ class RunRecordTest extends TestCase
         $this->assertSame(md5('// kit lib v1'), $record['kit']['libHash']);
         $this->assertSame(md5('indd-bytes'), $record['template']['hash']);
 
-        // The merge data itself is snapshotted beside the record.
-        $snapshot = substr($records[0], 0, -5).'.merge.csv';
-        $this->assertFileExists($snapshot);
-        $this->assertStringContainsString('Aetheris', file_get_contents($snapshot));
-        $this->assertSame($record['merge']['snapshot'], basename($snapshot));
+        // Version stamps: schema for gating/migrations, app version for humans.
+        $this->assertSame(1, $record['formatVersion']);
+        $this->assertSame(config('nativephp.version'), $record['appVersion']);
+
+        // The merge data itself is snapshotted inside the run directory.
+        $this->assertStringContainsString('Aetheris', file_get_contents($dirs[0].'/merge.csv'));
+        $this->assertSame('merge.csv', $record['merge']['snapshot']);
+
+        // One representative generated build script rides along.
+        $jsx = file_get_contents($dirs[0].'/build-script.jsx');
+        $this->assertStringContainsString('wotfLib.jsxinc', $jsx);
+        $this->assertStringContainsString('mergeRecords', $jsx);
     }
 
     public function test_runs_without_a_manifest_write_no_record(): void
@@ -118,7 +125,7 @@ class RunRecordTest extends TestCase
             '--cards' => 'TBC331',
         ])->assertExitCode(0);
 
-        $this->assertSame([], glob($this->setDir.'/.foundry/runs/*.json'));
+        $this->assertSame([], glob($this->setDir.'/.foundry/runs/*'));
     }
 
     public function test_scripts_override_replaces_the_kit_library_and_is_recorded(): void
@@ -132,7 +139,7 @@ class RunRecordTest extends TestCase
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/execute')
             && str_contains(str_replace('\\', '', $r->body()), '.foundry/scripts/wotfLib.jsxinc'));
 
-        $record = json_decode(file_get_contents(glob($this->setDir.'/.foundry/runs/*.json')[0]), true);
+        $record = json_decode(file_get_contents(glob($this->setDir.'/.foundry/runs/*/run.json')[0]), true);
         $this->assertSame(md5('// frozen lib'), $record['kit']['libHash']);
         $this->assertTrue($record['kit']['scriptsOverride']);
     }

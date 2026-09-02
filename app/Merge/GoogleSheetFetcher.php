@@ -58,15 +58,40 @@ final class GoogleSheetFetcher
             return $cached;
         }
 
-        $response = Http::timeout(30)->get(
+        // Signed in (Preferences → Google account): the download acts as
+        // that person, so the sheet's own share list controls access.
+        try {
+            $token = (new \App\Google\GoogleAuth)->accessToken();
+        } catch (\Throwable $e) {
+            throw new MergeParseException($e->getMessage(), previous: $e);
+        }
+
+        $request = Http::timeout(30);
+        if ($token !== null) {
+            $request = $request->withToken($token);
+        }
+
+        $response = $request->get(
             "https://docs.google.com/spreadsheets/d/{$id}/export",
             ['format' => 'csv', 'gid' => $gid],
         );
 
+        $email = \App\Google\GoogleAuth::email();
+
+        if ($response->status() === 403 && $email !== null) {
+            throw new MergeParseException(
+                "You're signed in as {$email}, but that account can't read this sheet — "
+                .'ask the sheet\'s owner to share it with you.',
+            );
+        }
+
         if ($response->failed()) {
             throw new MergeParseException(
                 "Could not download the linked Google Sheet (HTTP {$response->status()}). "
-                .'Check the link, and that the sheet is shared as "Anyone with the link can view".',
+                .($email !== null
+                    ? "You're signed in as {$email} — check the link, and that this account can open the sheet."
+                    : 'Check the link, and that the sheet is shared as "Anyone with the link can view" '
+                      .'(or sign in to Google in Preferences (⌘,) to use a protected sheet).'),
             );
         }
 
@@ -74,8 +99,10 @@ final class GoogleSheetFetcher
 
         if (str_starts_with(ltrim($body), '<') || str_contains(strtolower((string) $response->header('Content-Type')), 'text/html')) {
             throw new MergeParseException(
-                'The linked Google Sheet is not publicly readable — in Google Sheets choose '
-                .'Share → General access → "Anyone with the link" (Viewer), then try again.',
+                $email !== null
+                    ? "This sheet isn't readable by {$email} — ask the sheet's owner to share it with you."
+                    : 'The linked Google Sheet is not publicly readable — share it as "Anyone with the link" '
+                      .'(Viewer), or sign in to Google in Preferences (⌘,) and have the sheet shared with you.',
             );
         }
 

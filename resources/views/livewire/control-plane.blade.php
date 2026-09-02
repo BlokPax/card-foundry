@@ -35,10 +35,11 @@
 
 @php
     $modalOpen = $showLogsModal || $showInfoModal || $showProfileModal || $showCoverEditor
-        || $showCreateWizard || $showSetupWizard || $showManifestChanged || $detailRef !== null || $artPreviewRef !== null;
+        || $showCreateWizard || $showSetupWizard || $showManifestChanged || $showPreferences || $detailRef !== null || $artPreviewRef !== null;
 @endphp
 <div class="min-h-screen" @if ($runActive) wire:poll.2s @endif
      x-data x-on:keydown.window.meta.b.prevent="$wire.go()"
+     x-on:keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === ',') { $event.preventDefault(); $wire.openPreferences(); }"
      x-on:focus.window="$wire.checkManifestFreshness()">
 
     @if ($modalOpen)
@@ -126,6 +127,12 @@
             <flux:tooltip content="App logs">
                 <button wire:click="openLogsModal" aria-haspopup="dialog" aria-label="View app logs" class="ghost-icon">
                     <flux:icon name="document-text" variant="micro" />
+                </button>
+            </flux:tooltip>
+
+            <flux:tooltip content="Preferences (⌘,)">
+                <button wire:click="openPreferences" aria-haspopup="dialog" aria-label="Preferences" class="ghost-icon">
+                    <flux:icon name="cog-6-tooth" variant="micro" />
                 </button>
             </flux:tooltip>
 
@@ -1323,6 +1330,69 @@
                     <div class="flex gap-2">
                         <flux:button size="sm" variant="subtle" wire:click="$refresh">Refresh</flux:button>
                         <flux:button size="sm" variant="subtle" wire:click="$set('showLogsModal', false)">Close</flux:button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ── Preferences (⌘,) ───────────────────────────────────────────── --}}
+    @if ($showPreferences)
+        <div class="fixed inset-0 z-50 flex items-start justify-center p-6 pt-[12vh]"
+             x-data x-on:keydown.escape.window="$wire.set('showPreferences', false)">
+            <div class="absolute inset-0 bg-surface/70 backdrop-blur-sm" wire:click="$set('showPreferences', false)"></div>
+            <div class="panel relative w-full max-w-md p-0" wire:poll.3s="refreshGoogleStatus">
+                <div class="flex items-center justify-center border-b border-line px-5 py-3">
+                    <h2 class="text-[14px] font-semibold text-fg">Preferences</h2>
+                    <button wire:click="$set('showPreferences', false)" aria-label="Close preferences"
+                            class="ghost-icon absolute right-3">✕</button>
+                </div>
+
+                <div class="flex flex-col gap-5 p-5">
+                    <div>
+                        <span class="field-label mb-1.5 block !w-auto">Editing</span>
+                        <label class="flex cursor-pointer items-start gap-2.5 rounded-lg bg-surface-2 p-2.5">
+                            <flux:checkbox wire:model.live="editorMode" class="mt-0.5" />
+                            <span class="min-w-0">
+                                <span class="block text-xs font-medium text-fg">Allow editing set configurations</span>
+                                <span class="block text-[11px] leading-snug text-fg-subtle">
+                                    Off, this machine can build cards and tweak per-run options, but never
+                                    saves into a set's config — protection against accidental changes that
+                                    would affect everyone syncing the set.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div>
+                        <span class="field-label mb-1.5 block !w-auto">Google account</span>
+                        <div class="rounded-lg bg-surface-2 p-2.5">
+                            @if ($googleEmail !== '')
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="min-w-0">
+                                        <span class="block truncate text-xs font-medium text-fg">{{ $googleEmail }}</span>
+                                        <span class="block text-[11px] text-fg-subtle">Sheets are read as this account — its share access decides what opens.</span>
+                                    </span>
+                                    <flux:button size="xs" variant="subtle" wire:click="disconnectGoogle">Disconnect</flux:button>
+                                </div>
+                            @else
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="min-w-0">
+                                        <span class="block text-xs font-medium text-fg">Not connected</span>
+                                        <span class="block text-[11px] leading-snug text-fg-subtle">
+                                            Sign in to read protected merge sheets as yourself — the sheet's own
+                                            sharing controls who has access. Without it, only link-shared sheets work.
+                                        </span>
+                                    </span>
+                                    <flux:button size="xs" wire:click="connectGoogle">Connect…</flux:button>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between border-t border-line pt-3 text-[11px] text-fg-subtle">
+                        <span>Card Foundry {{ \App\Manifest\FoundryLayout::appVersion() }}</span>
+                        <span>Set format v{{ \App\Manifest\FoundryLayout::FORMAT_VERSION }} · you appear as “{{ \App\Manifest\FoundryLayout::user() }}”</span>
                     </div>
                 </div>
             </div>
