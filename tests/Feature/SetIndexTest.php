@@ -209,14 +209,22 @@ class SetIndexTest extends TestCase
         $this->assertSame('Trial by Combat', $raw['set']);
     }
 
-    public function test_setup_footer_shows_the_manifest_file_with_finder_access(): void
+    public function test_setup_footer_shows_the_set_folder_with_finder_access(): void
     {
         Livewire::test(ControlPlane::class)
             ->set('manifestPath', $this->dir.'/foundry.json')
-            // click-to-copy token carrying the absolute path…
-            ->assertSeeHtml('data-path="'.$this->dir.'/foundry.json"')
+            // click-to-copy token carrying the PROJECT folder, not the config file…
+            ->assertSeeHtml('data-path="'.$this->dir.'"')
             // …and a folder button to reveal it in Finder
-            ->assertSeeHtml('title="Show foundry.json in Finder"');
+            ->assertSeeHtml('title="Show the set\'s folder in Finder"');
+    }
+
+    public function test_set_header_always_shows_the_project_path(): void
+    {
+        Livewire::test(ControlPlane::class)
+            ->set('manifestPath', $this->dir.'/foundry.json')
+            ->set('showAdvanced', false) // header line lives outside the editor
+            ->assertSeeHtml('data-path="'.$this->dir.'"');
     }
 
     public function test_setup_panel_offers_a_set_name_input(): void

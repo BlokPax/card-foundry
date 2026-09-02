@@ -275,12 +275,36 @@
                     @endif
                 </button>
 
-                <div class="flex min-w-0 flex-1 items-baseline gap-2.5">
-                    <h1 class="truncate text-[17px] font-semibold tracking-[-0.01em] text-fg" title="{{ $manifestPath }}">
-                        {{ $setTitle ?: 'No set open' }}
-                    </h1>
-                    @if ($cards)
-                        <span class="shrink-0 text-[13px] text-fg-subtle tabular-nums">{{ count($cards) }} cards</span>
+                <div class="min-w-0 flex-1">
+                    <div class="flex min-w-0 items-baseline gap-2.5">
+                        <h1 class="truncate text-[17px] font-semibold tracking-[-0.01em] text-fg" title="{{ $manifestPath }}">
+                            {{ $setTitle ?: 'No set open' }}
+                        </h1>
+                        @if ($cards)
+                            <span class="shrink-0 text-[13px] text-fg-subtle tabular-nums">{{ count($cards) }} cards</span>
+                        @endif
+                    </div>
+
+                    {{-- the project folder + merge, one glance, no editor needed --}}
+                    @if ($manifestPath || $mergePath)
+                        <div class="mt-0.5 flex min-w-0 items-center gap-1.5">
+                            @if ($manifestPath)
+                                @php $projectDir = \App\Manifest\FoundryLayout::baseDirFor($manifestPath); @endphp
+                                <x-path :path="$projectDir" class="!max-w-[24rem]" />
+                                <button wire:click="openInFinder({{ json_encode($projectDir) }})" class="ghost-icon shrink-0" title="Show the set's folder in Finder">
+                                    <flux:icon name="folder" variant="micro" />
+                                </button>
+                            @endif
+                            @if ($mergePath)
+                                @php $sheetMerge = \App\Merge\GoogleSheetFetcher::isUrl($mergePath); @endphp
+                                <button wire:click="openMerge"
+                                        class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-fg-subtle transition hover:bg-surface-2 hover:text-fg"
+                                        title="{{ $sheetMerge ? 'Open the linked sheet in your browser' : 'Open the merge file' }}">
+                                    <flux:icon name="{{ $sheetMerge ? 'arrow-top-right-on-square' : 'table-cells' }}" variant="micro" />
+                                    {{ $sheetMerge ? 'Open sheet' : 'Open merge' }}
+                                </button>
+                            @endif
+                        </div>
                     @endif
                 </div>
 
@@ -566,10 +590,10 @@
                         @endif
 
                         @if ($manifestPath)
-                            {{-- the loaded set file: click the token to copy, folder to reveal --}}
+                            {{-- the set's folder — the project: click the token to copy, folder to reveal --}}
                             <div class="flex min-w-0 flex-1 items-center justify-center gap-1 px-3">
-                                <x-path :path="$manifestPath" class="!max-w-[26rem]" />
-                                <button wire:click="openInFinder({{ json_encode($manifestPath) }})" class="ghost-icon shrink-0" title="Show foundry.json in Finder">
+                                <x-path :path="\App\Manifest\FoundryLayout::baseDirFor($manifestPath)" class="!max-w-[26rem]" />
+                                <button wire:click="openInFinder({{ json_encode(\App\Manifest\FoundryLayout::baseDirFor($manifestPath)) }})" class="ghost-icon shrink-0" title="Show the set's folder in Finder">
                                     <flux:icon name="folder" variant="micro" />
                                 </button>
                             </div>

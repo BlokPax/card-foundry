@@ -1613,6 +1613,35 @@ class ControlPlane extends Component
     }
 
     /**
+     * Open the merge where it lives: a linked sheet in the browser, a
+     * local file in its default app — straight from the set header.
+     */
+    public function openMerge(): void
+    {
+        if ($this->mergePath === '') {
+            $this->notify('No merge linked yet — set one up first.');
+
+            return;
+        }
+
+        $open = (string) config('wotf.open_binary', '/usr/bin/open');
+
+        if (\App\Merge\GoogleSheetFetcher::isUrl($this->mergePath)) {
+            \Illuminate\Support\Facades\Process::timeout(15)->run([$open, $this->mergePath]);
+
+            return;
+        }
+
+        if (! is_file($this->mergePath)) {
+            $this->notify("The merge file is missing: {$this->mergePath}", 'error');
+
+            return;
+        }
+
+        \Illuminate\Support\Facades\Process::timeout(15)->run([$open, $this->mergePath]);
+    }
+
+    /**
      * Reveal a folder (or a file's folder) in Finder.
      */
     public function openInFinder(string $path): void
