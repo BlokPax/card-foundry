@@ -5,7 +5,7 @@
 // the brand gradient — matching the header logo. Rendered 2x and
 // downsampled for smooth edges.
 
-$base = '/Users/jim/work/ind4n-studio';
+$base = dirname(__DIR__);
 $out = $base.'/public/icon.png';
 
 $S = 2048;                       // working canvas (downsampled to 1024)
